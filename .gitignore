@@ -1,0 +1,9 @@
+.coverage
+.pytest_cache
+.tox
+__pycache__
+*.egg-info
+*.pyc
+htmlcov
+venv
+venv2
