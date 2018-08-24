@@ -1,12 +1,13 @@
 import apache_beam as beam
+import apache_beam.pvalue
 import builtins
-import os
+import numbers
 import numpy as np
+import os
 import shutil
 import tempfile
 import zarr
 
-from apache_beam.pvalue import AsDict
 from zap.base import *  # include everything in zap.base and hence base numpy
 from zap.zarr_spark import get_chunk_indices, read_zarr_chunk
 
@@ -178,10 +179,10 @@ class ndarray_pcollection(ndarray_dist):
     def from_ndarray(cls, pipeline, arr, chunks):
         shape = arr.shape
         ci = get_chunk_indices(shape, chunks)
-        chunk_indices = pipeline | beam.Create(ci)
+        chunk_indices = pipeline | gensym("from_ndarray") >> beam.Create(ci)
 
         # use the first component of chunk index as an index (assumes rows are one chunk wide)
-        pcollection = chunk_indices | beam.Map(
+        pcollection = chunk_indices | gensym("from_ndarray_indices") >>beam.Map(
             lambda chunk_index: (
                 chunk_index[0],
                 _read_chunk_from_arr(arr, chunks, chunk_index),
@@ -362,11 +363,14 @@ class ndarray_pcollection(ndarray_dist):
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
     ):
-        other = asarray(other)  # materialize
-        # TODO: should send 'other' as a Beam side input
-        new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
-            lambda pair: (pair[0], func(pair[1], other))
-        )
+        if isinstance(other, numbers.Number):
+            other = ndarray_pcollection.from_ndarray(self.pipeline, np.array([[other]]), (1, 1))
+        elif isinstance(other, np.ndarray):
+            other = ndarray_pcollection.from_ndarray(self.pipeline, other, (1, other.shape[1]))
+        #other_pcol = self.pipeline | gensym("other_side_input") >> beam.Create([other])
+        def f(pair, other):
+            return (pair[0], func(pair[1], other))
+        new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(f, other=apache_beam.pvalue.AsSingleton(other.pcollection))
         return self._new_or_copy(new_pcollection, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
@@ -411,7 +415,7 @@ class ndarray_pcollection(ndarray_dist):
             return index, row[subset_dict[index]]
 
         new_pcollection = self.pcollection | gensym("row_subset") >> beam.Map(
-            join_row_with_subset, AsDict(subset_pcollection)
+            join_row_with_subset, apache_beam.pvalue.AsDict(subset_pcollection)
         )
 
         # leave new chunks undefined since they are not necessarily equal-sized
@@ -472,7 +476,7 @@ class ndarray_pcollection(ndarray_dist):
             return index, row[subset_dict[index], :]
 
         new_pcollection = self.pcollection | gensym("row_subset") >> beam.Map(
-            join_row_with_subset, AsDict(subset_pcollection)
+            join_row_with_subset, apache_beam.pvalue.AsDict(subset_pcollection)
         )
 
         # leave new chunks undefined since they are not necessarily equal-sized
