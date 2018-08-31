@@ -1,7 +1,9 @@
+import concurrent.futures
 import logging
 import pytest
 import sys
 import zap.base as np  # zap includes everything in numpy, with some overrides and new functions
+import zap.executor.array
 import zap.local.array
 import zap.spark.array
 import zarr
@@ -9,9 +11,9 @@ import zarr
 from numpy.testing import assert_array_equal
 from pyspark.sql import SparkSession
 
-TESTS = [0, 1, 2, 3]
+TESTS = [0, 1, 2, 3, 6, 7]
 
-# only run Beam tests on Python 2
+# only run Beam tests on Python 2, and don't run executor tests
 if sys.version_info[0] == 2:
     import apache_beam as beam
     from apache_beam.options.pipeline_options import PipelineOptions
@@ -82,6 +84,16 @@ class TestZapArray:
             yield zap.beam.array.ndarray_pcollection.from_ndarray(
                 pipeline, x.copy(), chunks
             )
+        elif request.param == 6:
+            # zarr executor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.ndarray_executor.from_zarr(executor, xz)
+        elif request.param == 7:
+            # in-memory ndarray executor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.ndarray_executor.from_ndarray(
+                    executor, x.copy(), chunks
+                )
 
     def test_identity(self, x, xd):
         assert_array_equal(xd.asndarray(), x)

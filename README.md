@@ -6,12 +6,15 @@ The `zap.base` module defines a `ndarray_dist` class that exposes the same inter
 is backed by distributed storage and processing. The array is broken into chunks, which is typically loaded from Zarr,
 and each chunk is processed independently.
 
-There are three engines provided:
+There are a few engines provided:
 * **local** - for in-memory processing
 * **spark** - for processing using Spark
 * **beam** - for processing using Beam or Google Dataflow
+* **executor** - for processing using Python's [concurrent.futures.Executor]
 
 Beam currently only runs on Python 2.
+
+Hopefully the executor engine will make it possible to run on [Pywren] at some point.
 
 Full coverage of the `numpy.ndarray` interface is _not_ provided. Only enough has been implemented to support running
 parts of [Scanpy], as demonstrated in the [Single Cell Experiments] repo.
@@ -61,3 +64,5 @@ open htmlcov/index.html
 
 [Scanpy]: https://scanpy.readthedocs.io/
 [Single Cell Experiments]: https://github.com/lasersonlab/single-cell-experiments
+[concurrent.futures.Executor]: https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor
+[Pywren]: http://pywren.io/
