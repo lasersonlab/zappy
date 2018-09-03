@@ -11,6 +11,7 @@ import zarr
 from numpy.testing import assert_allclose
 from pyspark.sql import SparkSession
 
+# add/change to '8' to run the tests using Pywren (requires Pywren to be installed)
 TESTS = [0, 1, 2, 3, 6, 7]
 ZEROS_TESTS = [0, 1, 2]
 ONES_TESTS = ZEROS_TESTS
@@ -92,6 +93,59 @@ class TestZapArray:
             # in-memory ndarray executor
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
+        elif request.param == 8:
+            # in-memory ndarray pywren executor
+            executor = zap.executor.array.PywrenExecutor()
+            yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
+
+    @pytest.fixture(params=TESTS)
+    def xd_and_temp_store(self, sc, x, xz, chunks, request):
+        if request.param == 0:
+            # zarr direct
+            yield zap.direct.array.from_zarr(xz), zarr.TempStore()
+        elif request.param == 1:
+            # in-memory ndarray direct
+            yield zap.direct.array.from_ndarray(x.copy(), chunks), zarr.TempStore()
+        elif request.param == 2:
+            # zarr spark
+            yield zap.spark.array.from_zarr(sc, xz), zarr.TempStore()
+        elif request.param == 3:
+            # in-memory ndarray spark
+            yield zap.spark.array.from_ndarray(sc, x.copy(), chunks), zarr.TempStore()
+        elif request.param == 4:
+            # zarr beam
+            pipeline_options = PipelineOptions()
+            pipeline = beam.Pipeline(options=pipeline_options)
+            yield zap.beam.array.from_zarr(pipeline, xz), zarr.TempStore()
+        elif request.param == 5:
+            # in-memory ndarray beam
+            pipeline_options = PipelineOptions()
+            pipeline = beam.Pipeline(options=pipeline_options)
+            yield zap.beam.array.from_ndarray(pipeline, x.copy(), chunks), zarr.TempStore()
+        elif request.param == 6:
+            # zarr executor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.from_zarr(executor, xz), zarr.TempStore()
+        elif request.param == 7:
+            # in-memory ndarray executor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.from_ndarray(executor, x.copy(), chunks), zarr.TempStore()
+        elif request.param == 8:
+            # in-memory ndarray pywren executor
+            import s3fs.mapping
+
+            def create_unique_bucket_name(prefix):
+                import uuid
+
+                return "%s-%s" % (prefix, str(uuid.uuid4()).replace("-", ""))
+            s3 = s3fs.S3FileSystem()
+            bucket = create_unique_bucket_name("zap-test")
+            s3.mkdir(bucket)
+            path = "%s/%s" % (bucket, "test.zarr")
+            s3store = s3fs.mapping.S3Map(path, s3=s3)
+            executor = zap.executor.array.PywrenExecutor()
+            yield zap.executor.array.from_ndarray(executor, x.copy(), chunks), s3store
+            s3.rm(bucket, recursive=True)
 
     @pytest.fixture(params=ZEROS_TESTS)
     def zeros(self, sc, request):
@@ -235,12 +289,12 @@ class TestZapArray:
         varnp = var(x)
         assert_allclose(varnps, varnp)
 
-    def test_write_zarr(self, x, xd, tmpdir):
-        output_file_zarr = str(tmpdir.join("xd.zarr"))
-        xd.to_zarr(output_file_zarr, xd.chunks)
+    def test_write_zarr(self, x, xd_and_temp_store):
+        xd, temp_store = xd_and_temp_store
+        xd.to_zarr(temp_store, xd.chunks)
         # read back as zarr directly and check it is the same as x
         z = zarr.open(
-            output_file_zarr, mode="r", shape=x.shape, dtype=x.dtype, chunks=(2, 5)
+            temp_store, mode="r", shape=x.shape, dtype=x.dtype, chunks=(2, 5)
         )
         arr = z[:]
         assert_allclose(arr, x)
