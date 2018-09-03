@@ -8,7 +8,7 @@ import zap.local.array
 import zap.spark.array
 import zarr
 
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose
 from pyspark.sql import SparkSession
 
 TESTS = [0, 1, 2, 3, 6, 7]
@@ -96,90 +96,90 @@ class TestZapArray:
                 )
 
     def test_identity(self, x, xd):
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_scalar_arithmetic(self, x, xd):
         xd = (((xd + 1) * 2) - 4) / 1.1
         x = (((x + 1) * 2) - 4) / 1.1
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_arithmetic(self, x, xd):
         xd = xd * 2 + xd
         x = x * 2 + x
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_broadcast(self, x, xd):
         a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         xd = xd + a
         x = x + a
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_eq(self, x, xd):
         xd = xd == 0.0
         x = x == 0.0
         assert xd.dtype == x.dtype
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_ne(self, x, xd):
         xd = xd != 0.0
         x = x != 0.0
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_invert(self, x, xd):
         xd = ~(xd == 0.0)
         x = ~(x == 0.0)
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_inplace(self, x, xd):
         xd += 1
         x += 1
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_simple_index(self, x, xd):
         xd = xd[0]
         x = x[0]
-        assert_array_equal(xd, x)
+        assert_allclose(xd, x)
 
     def test_boolean_index(self, x, xd):
         xd = np.sum(xd, axis=1)  # sum rows
         xd = xd[xd > 5]
         x = np.sum(x, axis=1)  # sum rows
         x = x[x > 5]
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_subset_cols(self, x, xd):
         subset = np.array([True, False, True, False, True])
         xd = xd[:, subset]
         x = x[:, subset]
         assert xd.shape == x.shape
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_subset_rows(self, x, xd):
         subset = np.array([True, False, True])
         xd = xd[subset, :]
         x = x[subset, :]
         assert xd.shape == x.shape
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_newaxis(self, x, xd):
         xd = np.sum(xd, axis=1)[:, np.newaxis]
         x = np.sum(x, axis=1)[:, np.newaxis]
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_log1p(self, x, xd):
         log1pnps = np.log1p(xd).asndarray()
         log1pnp = np.log1p(x)
-        assert_array_equal(log1pnps, log1pnp)
+        assert_allclose(log1pnps, log1pnp)
 
     def test_sum_cols(self, x, xd):
         xd = np.sum(xd, axis=0)
         x = np.sum(x, axis=0)
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_sum_rows(self, x, xd):
         xd = np.sum(xd, axis=1)
         x = np.sum(x, axis=1)
-        assert_array_equal(xd.asndarray(), x)
+        assert_allclose(xd.asndarray(), x)
 
     def test_mean(self, x, xd):
         def mean(x):
@@ -187,7 +187,7 @@ class TestZapArray:
 
         meannps = mean(xd).asndarray()
         meannp = mean(x)
-        assert_array_equal(meannps, meannp)
+        assert_allclose(meannps, meannp)
 
     def test_var(self, x, xd):
         def var(x):
@@ -197,7 +197,7 @@ class TestZapArray:
 
         varnps = var(xd).asndarray()
         varnp = var(x)
-        assert_array_equal(varnps, varnp)
+        assert_allclose(varnps, varnp)
 
     def test_write_zarr(self, x, xd, tmpdir):
         output_file_zarr = str(tmpdir.join("xd.zarr"))
@@ -207,7 +207,7 @@ class TestZapArray:
             output_file_zarr, mode="r", shape=x.shape, dtype=x.dtype, chunks=(2, 5)
         )
         arr = z[:]
-        assert_array_equal(arr, x)
+        assert_allclose(arr, x)
 
 
 if __name__ == "__main__":
