@@ -28,6 +28,10 @@ def flatzip(a, b):
     return [to_tuple(x) + to_tuple(y) for (x, y) in zip(a, b)]
 
 
+def unpack_args(f):
+    return lambda x: f(*x)
+
+
 def compose2(f, g):
     return lambda x: f(g(x))
 
@@ -138,10 +142,7 @@ class ndarray_executor(ndarray_dist):
         # return cls(executor, inputs, shape, chunks, z.dtype, f=partial(read_zarr_chunk, z, chunks))
 
     def _compute(self):
-        def f(x):
-            return self.f(*x)
-
-        return list(self.executor.map(f, self.inputs))
+        return list(self.executor.map(unpack_args(self.f), self.inputs))
 
     def asndarray(self):
         inputs = self._compute()
