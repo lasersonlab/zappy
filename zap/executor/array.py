@@ -5,6 +5,7 @@ import zarr
 from functools import partial
 
 from zap.base import *  # include everything in zap.base and hence base numpy
+from zap.executor.dag import DAG
 from zap.zarr_spark import (
     get_chunk_indices,
     read_zarr_chunk,
@@ -13,49 +14,16 @@ from zap.zarr_spark import (
 )
 
 
-def identity(x):
-    return x
-
-
-def to_tuple(x):
-    if isinstance(x, tuple):
-        return x
-    return (x,)
-
-
-def flatzip(a, b):
-    # zip but don't nest
-    return [to_tuple(x) + to_tuple(y) for (x, y) in zip(a, b)]
-
-
-def unpack_args(f):
-    return lambda x: f(*x)
-
-
-def compose2(f, g):
-    return lambda x: f(g(x))
-
-
-def binary_compose2(f, g):
-    return lambda x, y: f(g(x), y)
-
-
 class ndarray_executor(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 
+    # new dag
     def __init__(
-        self,
-        executor,
-        inputs,
-        shape,
-        chunks,
-        dtype,
-        partition_row_counts=None,
-        f=identity,
+        self, executor, dag, input, shape, chunks, dtype, partition_row_counts=None
     ):
         self.executor = executor
-        self.inputs = inputs
-        self.f = f
+        self.dag = dag
+        self.input = input
         self.ndim = len(shape)
         self.shape = shape
         self.chunks = chunks
@@ -67,14 +35,9 @@ class ndarray_executor(ndarray_dist):
                 partition_row_counts.append(remaining)
         self.partition_row_counts = partition_row_counts
 
+    # same dag
     def _new(
-        self,
-        inputs,
-        shape=None,
-        chunks=None,
-        dtype=None,
-        partition_row_counts=None,
-        f=identity,
+        self, input, shape=None, chunks=None, dtype=None, partition_row_counts=None
     ):
         if shape is None:
             shape = self.shape
@@ -85,23 +48,23 @@ class ndarray_executor(ndarray_dist):
         if partition_row_counts is None:
             partition_row_counts = self.partition_row_counts
         return ndarray_executor(
-            self.executor, inputs, shape, chunks, dtype, partition_row_counts, f
+            self.executor, self.dag, input, shape, chunks, dtype, partition_row_counts
         )
 
+    # same dag
     def _new_or_copy(
         self,
-        inputs,
+        input,
         shape=None,
         chunks=None,
         dtype=None,
         partition_row_counts=None,
         copy=True,
-        f=identity,
     ):
         if copy:
-            return self._new(inputs, shape, chunks, dtype, partition_row_counts, f)
+            return self._new(input, shape, chunks, dtype, partition_row_counts)
         else:
-            self.inputs = inputs
+            self.input = input
             if shape is not None:
                 self.shape = shape
             if chunks is not None:
@@ -110,21 +73,18 @@ class ndarray_executor(ndarray_dist):
                 self.dtype = dtype
             if partition_row_counts is not None:
                 self.partition_row_counts = partition_row_counts
-            if f is not None:
-                self.f = f
             return self
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, executor, arr, chunks):
         shape = arr.shape
-        inputs = [
-            (read_zarr_chunk(arr, chunks, i),) for i in get_chunk_indices(shape, chunks)
-        ]
-        return cls(executor, inputs, shape, chunks, arr.dtype)
-        # TODO: defer reading the Zarr chunks
-        # inputs = [(i,) for i in get_chunk_indices(shape, chunks)]
-        # return cls(executor, inputs, shape, chunks, arr.dtype, f=partial(read_zarr_chunk, arr, chunks))
+        dag = DAG(executor)
+        # the input is just the chunk indices
+        input = dag.add_input(get_chunk_indices(shape, chunks))
+        # add a transform to read chunks
+        input = dag.transform(partial(read_zarr_chunk, arr, chunks), [input])
+        return cls(executor, dag, input, shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, executor, zarr_file):
@@ -133,16 +93,15 @@ class ndarray_executor(ndarray_dist):
         """
         z = zarr.open(zarr_file, mode="r")
         shape, chunks = z.shape, z.chunks
-        inputs = [
-            (read_zarr_chunk(z, chunks, i),) for i in get_chunk_indices(shape, chunks)
-        ]
-        return cls(executor, inputs, shape, chunks, z.dtype)
-        # TODO: defer reading the Zarr chunks
-        # inputs = [(i,) for i in get_chunk_indices(shape, chunks)]
-        # return cls(executor, inputs, shape, chunks, z.dtype, f=partial(read_zarr_chunk, z, chunks))
+        dag = DAG(executor)
+        # the input is just the chunk indices
+        input = dag.add_input(get_chunk_indices(shape, chunks))
+        # add a transform to read chunks
+        input = dag.transform(partial(read_zarr_chunk, z, chunks), [input])
+        return cls(executor, dag, input, shape, chunks, z.dtype)
 
     def _compute(self):
-        return list(self.executor.map(unpack_args(self.f), self.inputs))
+        return list(self.dag.compute(self.input))
 
     def asndarray(self):
         inputs = self._compute()
@@ -193,9 +152,18 @@ class ndarray_executor(ndarray_dist):
             result = [(x.shape[0], np.sum(x, axis=0)) for x in self._compute()]
             total_count = builtins.sum([res[0] for res in result])
             mean = np.sum([res[1] for res in result], axis=0) / total_count
-            inputs = [(mean,)]
-            return self._new(
-                inputs, mean.shape, mean.shape, partition_row_counts=mean.shape
+            # new dag
+            dag = DAG(self.executor)
+            partitioned_input = [mean]
+            input = dag.add_input(partitioned_input)
+            return ndarray_executor(
+                self.executor,
+                dag,
+                input,
+                mean.shape,
+                mean.shape,
+                self.dtype,
+                partition_row_counts=mean.shape,
             )
         return NotImplemented
 
@@ -203,19 +171,26 @@ class ndarray_executor(ndarray_dist):
         if axis == 0:  # sum of each column
             result = [np.sum(x, axis=0) for x in self._compute()]
             s = np.sum(result, axis=0)
-            inputs = [(s,)]
-            return self._new(inputs, s.shape, s.shape, partition_row_counts=s.shape)
+            # new dag
+            dag = DAG(self.executor)
+            partitioned_input = [s]
+            input = dag.add_input(partitioned_input)
+            return ndarray_executor(
+                self.executor,
+                dag,
+                input,
+                s.shape,
+                s.shape,
+                self.dtype,
+                partition_row_counts=s.shape,
+            )
         elif axis == 1:  # sum of each row
 
             def newfunc(x):
                 return np.sum(x, axis=1)
 
-            return self._new(
-                self.inputs,
-                (self.shape[0],),
-                (self.chunks[0],),
-                f=compose2(newfunc, self.f),
-            )
+            input = self.dag.transform(newfunc, [self.input])
+            return self._new(input, (self.shape[0],), (self.chunks[0],))
         return NotImplemented
 
     # TODO: more calculation methods here
@@ -223,17 +198,15 @@ class ndarray_executor(ndarray_dist):
     # Distributed ufunc internal implementation
 
     def _unary_ufunc(self, func, dtype=None, copy=True):
-        return self._new_or_copy(
-            self.inputs, dtype=dtype, copy=copy, f=compose2(func, self.f)
-        )
+        input = self.dag.transform(func, [self.input])
+        return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_self(self, func, dtype=None, copy=True):
         def newfunc(x):
             return func(x, x)
 
-        return self._new_or_copy(
-            self.inputs, dtype=dtype, copy=copy, f=compose2(newfunc, self.f)
-        )
+        input = self.dag.transform(newfunc, [self.input])
+        return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
@@ -243,25 +216,26 @@ class ndarray_executor(ndarray_dist):
         def newfunc(x):
             return func(x, other)
 
-        return self._new_or_copy(
-            self.inputs, dtype=dtype, copy=copy, f=compose2(newfunc, self.f)
-        )
+        input = self.dag.transform(newfunc, [self.input])
+        return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
-        return NotImplemented
+        other = asarray(other)  # materialize
+        partition_row_subsets = self._copartition(other)
+        side_input = self.dag.add_input(partition_row_subsets)
+        input = self.dag.transform(func, [self.input, side_input])
+        return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
         if self.partition_row_counts == other.partition_row_counts:
-            new_inputs = flatzip(self.inputs, other.inputs)
-            return self._new_or_copy(
-                new_inputs, dtype=dtype, copy=copy, f=binary_compose2(func, self.f)
-            )
+            input = self.dag.transform(func, [self.input, other.input])
+            return self._new_or_copy(input, dtype=dtype, copy=copy)
         return NotImplemented
 
     # Slicing
 
     def _boolean_array_index_dist(self, item):
-        # almost identical to row subset below
+        # almost identical to row subset below (only newfunc has different indexing)
         subset = item
         # materialize index ndarray_dist to ndarray
         if isinstance(subset, ndarray_executor):
@@ -273,11 +247,10 @@ class ndarray_executor(ndarray_dist):
         def newfunc(x, y):
             return x[y]
 
+        side_input = self.dag.add_input(partition_row_subsets)
+        input = self.dag.transform(newfunc, [self.input, side_input])
         return self._new(
-            flatzip(self.inputs, partition_row_subsets),
-            shape=new_shape,
-            partition_row_counts=new_partition_row_counts,
-            f=binary_compose2(newfunc, self.f),
+            input, shape=new_shape, partition_row_counts=new_partition_row_counts
         )
 
     def _column_subset(self, item):
@@ -289,12 +262,12 @@ class ndarray_executor(ndarray_dist):
             def newfunc(x):
                 return x[:, np.newaxis]
 
+            input = self.dag.transform(newfunc, [self.input])
             return self._new(
-                self.inputs,
+                input,
                 shape=new_shape,
                 chunks=new_chunks,
                 partition_row_counts=self.partition_row_counts,
-                f=compose2(newfunc, self.f),
             )
         subset = item[1]
         # materialize index ndarray_dist to ndarray
@@ -307,12 +280,12 @@ class ndarray_executor(ndarray_dist):
         def newfunc(x):
             return x[item]
 
+        input = self.dag.transform(newfunc, [self.input])
         return self._new(
-            self.inputs,
+            input,
             shape=new_shape,
             chunks=new_chunks,
             partition_row_counts=self.partition_row_counts,
-            f=compose2(newfunc, self.f),
         )
 
     def _row_subset(self, item):
@@ -327,11 +300,10 @@ class ndarray_executor(ndarray_dist):
         def newfunc(x, y):
             return x[y, :]
 
+        side_input = self.dag.add_input(partition_row_subsets)
+        input = self.dag.transform(newfunc, [self.input, side_input])
         return self._new(
-            flatzip(self.inputs, partition_row_subsets),
-            shape=new_shape,
-            partition_row_counts=new_partition_row_counts,
-            f=binary_compose2(newfunc, self.f),
+            input, shape=new_shape, partition_row_counts=new_partition_row_counts
         )
 
     def _copartition(self, arr):

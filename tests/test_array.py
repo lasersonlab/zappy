@@ -108,8 +108,18 @@ class TestZapArray:
         x = x * 2 + x
         assert_allclose(xd.asndarray(), x)
 
-    def test_broadcast(self, x, xd):
+    def test_broadcast_row(self, x, xd):
         a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        xd = xd + a
+        x = x + a
+        assert_allclose(xd.asndarray(), x)
+
+    def test_broadcast_col(self, x, xd):
+        if sys.version_info[0] == 2 and isinstance(
+            xd, zap.beam.array.ndarray_pcollection
+        ):  # TODO: fix this
+            return
+        a = np.array([[1.0], [2.0], [3.0]])
         xd = xd + a
         x = x + a
         assert_allclose(xd.asndarray(), x)

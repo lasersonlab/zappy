@@ -175,7 +175,12 @@ class ndarray_dist_local(ndarray_dist):
         return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
-        return NotImplemented
+        other = asarray(other)  # materialize
+        partition_row_subsets = self._copartition(other)
+        new_local_rows = [
+            func(p[0], p[1]) for p in zip(self.local_rows, partition_row_subsets)
+        ]
+        return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
 
     def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
         if self.partition_row_counts == other.partition_row_counts:
