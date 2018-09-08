@@ -3,7 +3,7 @@ import numpy as np
 import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.zarr_spark import get_chunk_indices, read_zarr_chunk, repartition_chunks
+from zap.zarr_spark import repartition_chunks
 
 
 def array_rdd(sc, arr, chunks):
@@ -15,76 +15,6 @@ def array_rdd_zarr(sc, zarr_file):
 
 
 # ndarray in Spark
-
-
-def _read_chunk_from_arr(arr, chunks, chunk_index):
-    return arr[
-        chunks[0] * chunk_index[0] : chunks[0] * (chunk_index[0] + 1),
-        chunks[1] * chunk_index[1] : chunks[1] * (chunk_index[1] + 1),
-    ]
-
-
-def _read_chunk(arr, chunks):
-    """
-    Return a function to read a chunk by coordinates from the given ndarray.
-    """
-
-    def read_one_chunk(chunk_index):
-        return _read_chunk_from_arr(arr, chunks, chunk_index)
-
-    return read_one_chunk
-
-
-def _read_chunk_zarr(zarr_file, chunks):
-    """
-    Return a function to read a chunk by coordinates from the given file.
-    """
-
-    def read_one_chunk(chunk_index):
-        z = zarr.open(zarr_file, mode="r")
-        return read_zarr_chunk(z, chunks, chunk_index)
-
-    return read_one_chunk
-
-
-def _write_chunk_zarr(zarr_file):
-    """
-    Return a function to write a chunk by index to the given file.
-    """
-
-    def write_one_chunk(index_arr):
-        """
-        Write a partition index and numpy array to a zarr store. The array must be the size of a chunk, and not
-        overlap other chunks.
-        """
-        index, arr = index_arr
-        z = zarr.open(zarr_file, mode="r+")
-        chunk_size = z.chunks
-        z[chunk_size[0] * index : chunk_size[0] * (index + 1), :] = arr
-
-    return write_one_chunk
-
-
-def _write_chunk_zarr_gcs(gcs_path, gcs_project, gcs_token):
-    """
-    Return a function to write a chunk by index to the given file.
-    """
-
-    def write_one_chunk(index_arr):
-        """
-        Write a partition index and numpy array to a zarr store. The array must be the size of a chunk, and not
-        overlap other chunks.
-        """
-        import gcsfs.mapping
-
-        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
-        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
-        index, arr = index_arr
-        z = zarr.open(store, mode="r+")
-        chunk_size = z.chunks
-        z[chunk_size[0] * index : chunk_size[0] * (index + 1), :] = arr
-
-    return write_one_chunk
 
 
 class ndarray_rdd(ndarray_dist):
@@ -141,37 +71,23 @@ class ndarray_rdd(ndarray_dist):
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, sc, arr, chunks):
-        shape = arr.shape
-        ci = get_chunk_indices(shape, chunks)
-        chunk_indices = sc.parallelize(ci, len(ci))
-        rdd = chunk_indices.map(_read_chunk(arr, chunks))
-        return cls(sc, rdd, shape, chunks, arr.dtype)
+        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
+        rdd = sc.parallelize(chunk_indices, len(chunk_indices)).map(func)
+        return cls(sc, rdd, arr.shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, sc, zarr_file):
         """
         Read a Zarr file as an ndarray_rdd object.
         """
-        z = zarr.open(zarr_file, mode="r")
-        shape, chunks = z.shape, z.chunks
-        ci = get_chunk_indices(shape, chunks)
-        chunk_indices = sc.parallelize(ci, len(ci))
-        rdd = chunk_indices.map(_read_chunk_zarr(zarr_file, chunks))
-        return cls(sc, rdd, shape, chunks, z.dtype)
+        arr = zarr.open(zarr_file, mode="r")
+        return cls.from_ndarray(sc, arr, arr.chunks)
 
-    def asndarray(self):
-        local_rows = self.rdd.collect()
-        rdd_row_counts = [len(arr) for arr in local_rows]
-        assert rdd_row_counts == list(self.partition_row_counts), (
-            "RDD row counts: %s; partition row counts: %s"
-            % (rdd_row_counts, self.partition_row_counts)
-        )
-        arr = np.concatenate(local_rows)
-        assert arr.shape[0] == builtins.sum(self.partition_row_counts), (
-            "RDD #rows: %s; partition row counts total: %s"
-            % (arr.shape[0], builtins.sum(self.partition_row_counts))
-        )
-        return arr
+    def _compute(self):
+        return self.rdd.collect()
+
+    def _get_partition_row_counts(self):
+        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         partitioned_rdd = repartition_chunks(
@@ -185,24 +101,6 @@ class ndarray_rdd(ndarray_dist):
             return [(index, values[0])]
 
         partitioned_rdd.mapPartitionsWithIndex(index_partitions).foreach(write_chunk_fn)
-
-    def to_zarr(self, zarr_file, chunks):
-        """
-        Write an anndata object to a Zarr file.
-        """
-        self._write_zarr(zarr_file, chunks, _write_chunk_zarr(zarr_file))
-
-    def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
-        """
-        Write an anndata object to a Zarr file on GCS.
-        """
-        import gcsfs.mapping
-
-        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
-        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
-        self._write_zarr(
-            store, chunks, _write_chunk_zarr_gcs(gcs_path, gcs_project, gcs_token)
-        )
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
@@ -253,7 +151,7 @@ class ndarray_rdd(ndarray_dist):
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
         other = asarray(other)  # materialize
-        partition_row_subsets = self._copartition(other)
+        partition_row_subsets = self._copartition(other, self.partition_row_counts)
         repartitioned_other_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)
         )
@@ -265,7 +163,9 @@ class ndarray_rdd(ndarray_dist):
             new_rdd = self.rdd.zip(other.rdd).map(lambda p: func(p[0], p[1]))
             return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
         elif other.shape[1] == 1:
-            partition_row_subsets = self._copartition(other.asndarray())
+            partition_row_subsets = self._copartition(
+                other.asndarray(), self.partition_row_counts
+            )
             repartitioned_other_rdd = self.sc.parallelize(
                 partition_row_subsets, len(partition_row_subsets)
             )
@@ -278,11 +178,8 @@ class ndarray_rdd(ndarray_dist):
     # Slicing
 
     def _boolean_array_index_dist(self, item):
-        subset = item
-        # materialize index RDD to ndarray
-        if isinstance(subset, ndarray_rdd):
-            subset = subset.asndarray()
-        partition_row_subsets = self._copartition(subset)
+        subset = asarray(item)  # materialize
+        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts),)
         # leave new chunks undefined since they are not necessarily equal-sized
@@ -306,10 +203,7 @@ class ndarray_rdd(ndarray_dist):
                 chunks=new_chunks,
                 partition_row_counts=self.partition_row_counts,
             )
-        subset = item[1]
-        # materialize index RDD to ndarray
-        if isinstance(subset, ndarray_rdd):
-            subset = subset.asndarray()
+        subset = asarray(item[1])  # materialize
         new_num_cols = builtins.sum(subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
@@ -321,11 +215,8 @@ class ndarray_rdd(ndarray_dist):
         )
 
     def _row_subset(self, item):
-        subset = item[0]
-        # materialize index RDD to ndarray
-        if isinstance(subset, ndarray_rdd):
-            subset = subset.asndarray()
-        partition_row_subsets = self._copartition(subset)
+        subset = asarray(item[0])  # materialize
+        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         # leave new chunks undefined since they are not necessarily equal-sized
@@ -337,11 +228,3 @@ class ndarray_rdd(ndarray_dist):
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
-
-    def _copartition(self, arr):
-        partition_row_subsets = np.split(
-            arr, np.cumsum(self.partition_row_counts)[0:-1]
-        )
-        if len(partition_row_subsets[-1]) == 0:
-            partition_row_subsets = partition_row_subsets[0:-1]
-        return partition_row_subsets

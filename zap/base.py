@@ -1,6 +1,16 @@
+import builtins
 import numbers
 import numpy as np
 import sys
+
+from functools import partial
+
+from zap.zarr_spark import (
+    get_chunk_indices,
+    read_zarr_chunk,
+    write_chunk,
+    write_chunk_gcs,
+)
 
 from numpy import *  # include everything in base numpy
 
@@ -166,19 +176,56 @@ class ndarray_dist:
     def from_zarr(cls, sc, zarr_file):
         return NotImplemented
 
+    @staticmethod
+    def _read_chunks(arr, chunks):
+        shape = arr.shape
+        func = partial(read_zarr_chunk, arr, chunks)
+        chunk_indices = get_chunk_indices(shape, chunks)
+        return func, chunk_indices
+
     def asndarray(self):
+        inputs = self._compute()
+        partition_row_counts = self._get_partition_row_counts()
+        local_row_counts = [len(arr) for arr in inputs]
+        assert local_row_counts == list(partition_row_counts), (
+            "Local row counts: %s; partition row counts: %s"
+            % (local_row_counts, partition_row_counts)
+        )
+        arr = np.concatenate(inputs)
+        assert arr.shape[0] == builtins.sum(partition_row_counts), (
+            "Local #rows: %s; partition row counts total: %s"
+            % (arr.shape[0], builtins.sum(partition_row_counts))
+        )
+        return arr
+
+    def _compute(self):
+        """
+        :return: a list of array chunks
+        """
+        return NotImplemented
+
+    def _get_partition_row_counts(self):
         return NotImplemented
 
     def to_zarr(self, zarr_file, chunks):
         """
         Write an ndarray_dist object to a Zarr file.
         """
-        return NotImplemented
+        self._write_zarr(zarr_file, chunks, write_chunk(zarr_file))
 
     def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
         """
         Write an ndarray_dist object to a Zarr file on GCS.
         """
+        import gcsfs.mapping
+
+        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
+        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
+        self._write_zarr(
+            store, chunks, write_chunk_gcs(gcs_path, gcs_project, gcs_token)
+        )
+
+    def _write_zarr(self, store, chunks, write_chunk_fn):
         return NotImplemented
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
@@ -265,6 +312,14 @@ class ndarray_dist:
 
     def _row_subset(self, item):
         return NotImplemented
+
+    # Utility methods
+
+    def _copartition(self, arr, partition_row_counts):
+        partition_row_subsets = np.split(arr, np.cumsum(partition_row_counts)[0:-1])
+        if len(partition_row_subsets[-1]) == 0:
+            partition_row_subsets = partition_row_subsets[0:-1]
+        return partition_row_subsets
 
     # Arithmetic, matrix multiplication, and comparison operations (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#arithmetic-matrix-multiplication-and-comparison-operations)
 

@@ -8,7 +8,6 @@ import zarr
 
 from apache_beam.pvalue import AsDict
 from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.zarr_spark import get_chunk_indices, read_zarr_chunk
 
 sym_counter = 0
 
@@ -20,76 +19,6 @@ def gensym(name):
 
 
 # ndarray in Beam
-
-
-def _read_chunk_from_arr(arr, chunks, chunk_index):
-    return arr[
-        chunks[0] * chunk_index[0] : chunks[0] * (chunk_index[0] + 1),
-        chunks[1] * chunk_index[1] : chunks[1] * (chunk_index[1] + 1),
-    ]
-
-
-def _read_chunk(arr, chunks):
-    """
-    Return a function to read a chunk by coordinates from the given ndarray.
-    """
-
-    def read_one_chunk(chunk_index):
-        return _read_chunk_from_arr(arr, chunks, chunk_index)
-
-    return read_one_chunk
-
-
-def _read_chunk_zarr(zarr_file, chunks):
-    """
-    Return a function to read a chunk by coordinates from the given file.
-    """
-
-    def read_one_chunk(chunk_index):
-        z = zarr.open(zarr_file, mode="r")
-        return read_zarr_chunk(z, chunks, chunk_index)
-
-    return read_one_chunk
-
-
-def _write_chunk_zarr(zarr_file):
-    """
-    Return a function to write a chunk by index to the given file.
-    """
-
-    def write_one_chunk(index_arr):
-        """
-        Write a partition index and numpy array to a zarr store. The array must be the size of a chunk, and not
-        overlap other chunks.
-        """
-        index, arr = index_arr
-        z = zarr.open(zarr_file, mode="r+")
-        chunk_size = z.chunks
-        z[chunk_size[0] * index : chunk_size[0] * (index + 1), :] = arr
-
-    return write_one_chunk
-
-
-def _write_chunk_zarr_gcs(gcs_path, gcs_project, gcs_token):
-    """
-    Return a function to write a chunk by index to the given file.
-    """
-
-    def write_one_chunk(index_arr):
-        """
-        Write a partition index and numpy array to a zarr store. The array must be the size of a chunk, and not
-        overlap other chunks.
-        """
-        import gcsfs.mapping
-
-        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
-        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
-        index, arr = index_arr
-        z = zarr.open(store, mode="r+")
-        chunk_size = z.chunks
-        z[chunk_size[0] * index : chunk_size[0] * (index + 1), :] = arr
-
-    return write_one_chunk
 
 
 class ndarray_pcollection(ndarray_dist):
@@ -176,39 +105,24 @@ class ndarray_pcollection(ndarray_dist):
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, pipeline, arr, chunks):
-        shape = arr.shape
-        ci = get_chunk_indices(shape, chunks)
-        chunk_indices = pipeline | beam.Create(ci)
-
+        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
         # use the first component of chunk index as an index (assumes rows are one chunk wide)
-        pcollection = chunk_indices | beam.Map(
-            lambda chunk_index: (
-                chunk_index[0],
-                _read_chunk_from_arr(arr, chunks, chunk_index),
-            )
+        pcollection = (
+            pipeline
+            | beam.Create(chunk_indices)
+            | beam.Map(lambda chunk_index: (chunk_index[0], func(chunk_index)))
         )
-        return cls(pipeline, pcollection, shape, chunks, arr.dtype)
+        return cls(pipeline, pcollection, arr.shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, pipeline, zarr_file):
         """
         Read a Zarr file as an ndarray_pcollection object.
         """
-        z = zarr.open(zarr_file, mode="r")
-        shape, chunks = z.shape, z.chunks
-        ci = get_chunk_indices(shape, chunks)
-        chunk_indices = pipeline | beam.Create(ci)
+        arr = zarr.open(zarr_file, mode="r")
+        return cls.from_ndarray(pipeline, arr, arr.chunks)
 
-        # use the first component of chunk index as an index (assumes rows are one chunk wide)
-        pcollection = chunk_indices | beam.Map(
-            lambda chunk_index: (
-                chunk_index[0],
-                read_zarr_chunk(zarr.open(zarr_file, mode="r"), chunks, chunk_index),
-            )
-        )
-        return cls(pipeline, pcollection, shape, chunks, z.dtype)
-
-    def asndarray(self):
+    def _compute(self):
         # create a temporary subdirectory to materialize arrays to
         sym = gensym("asndarray")
         subdir = "%s/%s" % (self.tmp_dir, sym)
@@ -231,17 +145,10 @@ class ndarray_pcollection(ndarray_dist):
             row = np.load(os.path.join(subdir, filename))
             local_rows[index] = row
 
-        pcollection_row_counts = [len(arr) for arr in local_rows]
-        assert pcollection_row_counts == list(self.partition_row_counts), (
-            "PCollection row counts: %s; partition row counts: %s"
-            % (pcollection_row_counts, self.partition_row_counts)
-        )
-        arr = np.concatenate(local_rows)
-        assert arr.shape[0] == builtins.sum(self.partition_row_counts), (
-            "PCollection #rows: %s; partition row counts total: %s"
-            % (arr.shape[0], builtins.sum(self.partition_row_counts))
-        )
-        return arr
+        return local_rows
+
+    def _get_partition_row_counts(self):
+        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         partitioned_pcollection = (
@@ -252,24 +159,6 @@ class ndarray_pcollection(ndarray_dist):
 
         result = self.pipeline.run()
         result.wait_until_finish()
-
-    def to_zarr(self, zarr_file, chunks):
-        """
-        Write an anndata object to a Zarr file.
-        """
-        self._write_zarr(zarr_file, chunks, _write_chunk_zarr(zarr_file))
-
-    def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
-        """
-        Write an anndata object to a Zarr file on GCS.
-        """
-        import gcsfs.mapping
-
-        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
-        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
-        self._write_zarr(
-            store, chunks, _write_chunk_zarr_gcs(gcs_path, gcs_project, gcs_token)
-        )
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
@@ -392,11 +281,8 @@ class ndarray_pcollection(ndarray_dist):
     # Slicing
 
     def _boolean_array_index_dist(self, item):
-        subset = item
-        # materialize index PCollection to ndarray
-        if isinstance(subset, ndarray_pcollection):
-            subset = subset.asndarray()
-        partition_row_subsets = self._copartition(subset)
+        subset = asarray(item)  # materialize
+        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts),)
 
@@ -435,10 +321,7 @@ class ndarray_pcollection(ndarray_dist):
                 chunks=new_chunks,
                 partition_row_counts=self.partition_row_counts,
             )
-        subset = item[1]
-        # materialize index PCollection to ndarray
-        if isinstance(subset, ndarray_pcollection):
-            subset = subset.asndarray()
+        subset = asarray(item[1])  # materialize
         new_pcollection = self.pcollection | gensym("column_subset") >> beam.Map(
             lambda pair: (pair[0], pair[1][item])
         )
@@ -453,11 +336,8 @@ class ndarray_pcollection(ndarray_dist):
         )
 
     def _row_subset(self, item):
-        subset = item[0]
-        # materialize index PCollection to ndarray
-        if isinstance(subset, ndarray_pcollection):
-            subset = subset.asndarray()
-        partition_row_subsets = self._copartition(subset)
+        subset = asarray(item[0])  # materialize
+        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
 
@@ -481,11 +361,3 @@ class ndarray_pcollection(ndarray_dist):
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
-
-    def _copartition(self, arr):
-        partition_row_subsets = np.split(
-            arr, np.cumsum(self.partition_row_counts)[0:-1]
-        )
-        if len(partition_row_subsets[-1]) == 0:
-            partition_row_subsets = partition_row_subsets[0:-1]
-        return partition_row_subsets

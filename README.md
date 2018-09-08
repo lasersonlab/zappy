@@ -7,7 +7,7 @@ is backed by distributed storage and processing. The array is broken into chunks
 and each chunk is processed independently.
 
 There are a few engines provided:
-* **local** - for in-memory processing
+* **direct** - for eager in-memory processing
 * **spark** - for processing using Spark
 * **beam** - for processing using Beam or Google Dataflow
 * **executor** - for processing using Python's [concurrent.futures.Executor]

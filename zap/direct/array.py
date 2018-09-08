@@ -3,15 +3,9 @@ import numpy as np
 import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.zarr_spark import (
-    get_chunk_indices,
-    read_zarr_chunk,
-    write_chunk,
-    write_chunk_gcs,
-)
 
 
-class ndarray_dist_local(ndarray_dist):
+class ndarray_dist_direct(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 
     def __init__(self, local_rows, shape, chunks, dtype, partition_row_counts=None):
@@ -38,7 +32,7 @@ class ndarray_dist_local(ndarray_dist):
             dtype = self.dtype
         if partition_row_counts is None:
             partition_row_counts = self.partition_row_counts
-        return ndarray_dist_local(
+        return ndarray_dist_direct(
             local_rows, shape, chunks, dtype, partition_row_counts
         )
 
@@ -68,37 +62,23 @@ class ndarray_dist_local(ndarray_dist):
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, arr, chunks):
-        shape = arr.shape
-        local_rows = [
-            read_zarr_chunk(arr, chunks, i) for i in get_chunk_indices(shape, chunks)
-        ]
-        return cls(local_rows, shape, chunks, arr.dtype)
+        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
+        local_rows = [func(i) for i in chunk_indices]
+        return cls(local_rows, arr.shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, zarr_file):
         """
-        Read a Zarr file as an ndarray_dist_local object.
+        Read a Zarr file as an ndarray_dist_direct object.
         """
-        z = zarr.open(zarr_file, mode="r")
-        shape, chunks = z.shape, z.chunks
-        local_rows = [
-            read_zarr_chunk(z, chunks, i) for i in get_chunk_indices(shape, chunks)
-        ]
-        return cls(local_rows, shape, chunks, z.dtype)
+        arr = zarr.open(zarr_file, mode="r")
+        return cls.from_ndarray(arr, arr.chunks)
 
-    def asndarray(self):
-        local_rows = self.local_rows
-        local_row_counts = [len(arr) for arr in local_rows]
-        assert local_row_counts == list(self.partition_row_counts), (
-            "Local row counts: %s; partition row counts: %s"
-            % (local_row_counts, self.partition_row_counts)
-        )
-        arr = np.concatenate(local_rows)
-        assert arr.shape[0] == builtins.sum(self.partition_row_counts), (
-            "Local #rows: %s; partition row counts total: %s"
-            % (arr.shape[0], builtins.sum(self.partition_row_counts))
-        )
-        return arr
+    def _compute(self):
+        return self.local_rows
+
+    def _get_partition_row_counts(self):
+        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         # partitioned_rdd = repartition_chunks(
@@ -109,24 +89,6 @@ class ndarray_dist_local(ndarray_dist):
 
         for (idx, arr) in enumerate(partitioned_local_rows):
             write_chunk_fn((idx, arr))
-
-    def to_zarr(self, zarr_file, chunks):
-        """
-        Write an anndata object to a Zarr file.
-        """
-        self._write_zarr(zarr_file, chunks, write_chunk(zarr_file))
-
-    def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
-        """
-        Write an anndata object to a Zarr file on GCS.
-        """
-        import gcsfs.mapping
-
-        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
-        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
-        self._write_zarr(
-            store, chunks, write_chunk_gcs(gcs_path, gcs_project, gcs_token)
-        )
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
@@ -176,7 +138,7 @@ class ndarray_dist_local(ndarray_dist):
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
         other = asarray(other)  # materialize
-        partition_row_subsets = self._copartition(other)
+        partition_row_subsets = self._copartition(other, self.partition_row_counts)
         new_local_rows = [
             func(p[0], p[1]) for p in zip(self.local_rows, partition_row_subsets)
         ]
@@ -194,11 +156,8 @@ class ndarray_dist_local(ndarray_dist):
 
     def _boolean_array_index_dist(self, item):
         # almost identical to row subset below
-        subset = item
-        # materialize index ndarray_dist to ndarray
-        if isinstance(subset, ndarray_dist_local):
-            subset = subset.asndarray()
-        partition_row_subsets = self._copartition(subset)
+        subset = asarray(item)  # materialize
+        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts),)
         return self._new(
@@ -218,10 +177,7 @@ class ndarray_dist_local(ndarray_dist):
                 chunks=new_chunks,
                 partition_row_counts=self.partition_row_counts,
             )
-        subset = item[1]
-        # materialize index ndarray_dist to ndarray
-        if isinstance(subset, ndarray_dist_local):
-            subset = subset.asndarray()
+        subset = asarray(item[1])  # materialize
         new_num_cols = builtins.sum(subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
@@ -233,11 +189,8 @@ class ndarray_dist_local(ndarray_dist):
         )
 
     def _row_subset(self, item):
-        subset = item[0]
-        # materialize index ndarray_dist to ndarray
-        if isinstance(subset, ndarray_dist_local):
-            subset = subset.asndarray()
-        partition_row_subsets = self._copartition(subset)
+        subset = asarray(item[0])  # materialize
+        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         return self._new(
@@ -245,11 +198,3 @@ class ndarray_dist_local(ndarray_dist):
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
-
-    def _copartition(self, arr):
-        partition_row_subsets = np.split(
-            arr, np.cumsum(self.partition_row_counts)[0:-1]
-        )
-        if len(partition_row_subsets[-1]) == 0:
-            partition_row_subsets = partition_row_subsets[0:-1]
-        return partition_row_subsets

@@ -4,7 +4,7 @@ import pytest
 import sys
 import zap.base as np  # zap includes everything in numpy, with some overrides and new functions
 import zap.executor.array
-import zap.local.array
+import zap.direct.array
 import zap.spark.array
 import zarr
 
@@ -61,11 +61,11 @@ class TestZapArray:
     @pytest.fixture(params=TESTS)
     def xd(self, sc, x, xz, chunks, request):
         if request.param == 0:
-            # zarr local
-            yield zap.local.array.ndarray_dist_local.from_zarr(xz)
+            # zarr direct
+            yield zap.direct.array.ndarray_dist_direct.from_zarr(xz)
         elif request.param == 1:
-            # in-memory ndarray local
-            yield zap.local.array.ndarray_dist_local.from_ndarray(x.copy(), chunks)
+            # in-memory ndarray direct
+            yield zap.direct.array.ndarray_dist_direct.from_ndarray(x.copy(), chunks)
         elif request.param == 2:
             # zarr spark
             yield zap.spark.array.array_rdd_zarr(sc, xz)
