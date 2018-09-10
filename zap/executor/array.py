@@ -143,11 +143,7 @@ class ndarray_executor(ndarray_dist):
                 partition_row_counts=s.shape,
             )
         elif axis == 1:  # sum of each row
-
-            def newfunc(x):
-                return np.sum(x, axis=1)
-
-            input = self.dag.transform(newfunc, [self.input])
+            input = self.dag.transform(lambda x: np.sum(x, axis=1), [self.input])
             return self._new(input, (self.shape[0],), (self.chunks[0],))
         return NotImplemented
 
@@ -160,21 +156,14 @@ class ndarray_executor(ndarray_dist):
         return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_self(self, func, dtype=None, copy=True):
-        def newfunc(x):
-            return func(x, x)
-
-        input = self.dag.transform(newfunc, [self.input])
+        input = self.dag.transform(lambda x: func(x, x), [self.input])
         return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
     ):
         other = asarray(other)  # materialize
-
-        def newfunc(x):
-            return func(x, other)
-
-        input = self.dag.transform(newfunc, [self.input])
+        input = self.dag.transform(lambda x: func(x, other), [self.input])
         return self._new_or_copy(input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
@@ -193,17 +182,13 @@ class ndarray_executor(ndarray_dist):
     # Slicing
 
     def _boolean_array_index_dist(self, item):
-        # almost identical to row subset below (only newfunc has different indexing)
+        # almost identical to row subset below (only lambda has different indexing)
         subset = asarray(item)  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts),)
-
-        def newfunc(x, y):
-            return x[y]
-
         side_input = self.dag.add_input(partition_row_subsets)
-        input = self.dag.transform(newfunc, [self.input, side_input])
+        input = self.dag.transform(lambda x, y: x[y], [self.input, side_input])
         return self._new(
             input, shape=new_shape, partition_row_counts=new_partition_row_counts
         )
@@ -213,11 +198,7 @@ class ndarray_executor(ndarray_dist):
             new_num_cols = 1
             new_shape = (self.shape[0], new_num_cols)
             new_chunks = (self.chunks[0], new_num_cols)
-
-            def newfunc(x):
-                return x[:, np.newaxis]
-
-            input = self.dag.transform(newfunc, [self.input])
+            input = self.dag.transform(lambda x: x[:, np.newaxis], [self.input])
             return self._new(
                 input,
                 shape=new_shape,
@@ -228,11 +209,7 @@ class ndarray_executor(ndarray_dist):
         new_num_cols = builtins.sum(subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
-
-        def newfunc(x):
-            return x[item]
-
-        input = self.dag.transform(newfunc, [self.input])
+        input = self.dag.transform(lambda x: x[item], [self.input])
         return self._new(
             input,
             shape=new_shape,
@@ -245,12 +222,8 @@ class ndarray_executor(ndarray_dist):
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
-
-        def newfunc(x, y):
-            return x[y, :]
-
         side_input = self.dag.add_input(partition_row_subsets)
-        input = self.dag.transform(newfunc, [self.input, side_input])
+        input = self.dag.transform(lambda x, y: x[y, :], [self.input, side_input])
         return self._new(
             input, shape=new_shape, partition_row_counts=new_partition_row_counts
         )
