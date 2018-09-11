@@ -219,21 +219,33 @@ class ndarray_dist:
         """
         return NotImplemented
 
+    def _repartition_chunks(self, chunks):
+        # subclasses should implement this to repartition to equal-sized chunks
+        return NotImplemented
+
+    def _repartition_if_necessary(self, chunks):
+        if all([count == chunks[0] for count in self.partition_row_counts[:-1]]):
+            return self
+        else:
+            return self._repartition_chunks(chunks)
+
     def to_zarr(self, zarr_file, chunks):
         """
         Write an ndarray_dist object to a Zarr file.
         """
-        self._write_zarr(zarr_file, chunks, write_chunk(zarr_file))
+        repartitioned = self._repartition_if_necessary(chunks)
+        repartitioned._write_zarr(zarr_file, chunks, write_chunk(zarr_file))
 
     def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
         """
         Write an ndarray_dist object to a Zarr file on GCS.
         """
+        repartitioned = self._repartition_if_necessary(chunks)
         import gcsfs.mapping
 
         gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
         store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
-        self._write_zarr(
+        repartitioned._write_zarr(
             store, chunks, write_chunk_gcs(gcs_path, gcs_project, gcs_token)
         )
 
@@ -332,6 +344,9 @@ class ndarray_dist:
         if len(partition_row_subsets[-1]) == 0:
             partition_row_subsets = partition_row_subsets[0:-1]
         return partition_row_subsets
+
+    def _partition_row_counts(self, partition_row_subsets):
+        return [int(builtins.sum(s)) for s in partition_row_subsets]
 
     # Arithmetic, matrix multiplication, and comparison operations (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#arithmetic-matrix-multiplication-and-comparison-operations)
 

@@ -219,6 +219,3 @@ class TestZapArray:
         arr = z[:]
         assert_allclose(arr, x)
 
-
-if __name__ == "__main__":
-    unittest.main()

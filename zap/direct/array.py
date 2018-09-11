@@ -68,14 +68,18 @@ class ndarray_dist_direct(ndarray_dist):
     def _compute(self):
         return self.local_rows
 
+    def _repartition_chunks(self, chunks):
+        arr = np.concatenate(self.local_rows)
+        partition_row_counts = [chunks[0]] * (self.shape[0] // chunks[0])
+        remaining = self.shape[0] % chunks[0]
+        if remaining != 0:
+            partition_row_counts.append(remaining)
+        return self._new_or_copy(self._copartition(arr, partition_row_counts), chunks=chunks, partition_row_counts=partition_row_counts, copy=True)
+
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        # partitioned_rdd = repartition_chunks(
-        #     self.sc, self.rdd, chunks, self.partition_row_counts
-        # )  # repartition if needed
-        partitioned_local_rows = self.local_rows  # TODO: repartition if needed
         zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
 
-        for (idx, arr) in enumerate(partitioned_local_rows):
+        for (idx, arr) in enumerate(self.local_rows):
             write_chunk_fn((idx, arr))
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
@@ -146,7 +150,7 @@ class ndarray_dist_direct(ndarray_dist):
         # almost identical to row subset below
         subset = asarray(item)  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
+        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts),)
         return self._new(
             [p[0][p[1]] for p in zip(self.local_rows, partition_row_subsets)],
@@ -179,7 +183,7 @@ class ndarray_dist_direct(ndarray_dist):
     def _row_subset(self, item):
         subset = asarray(item[0])  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
+        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         return self._new(
             [p[0][p[1], :] for p in zip(self.local_rows, partition_row_subsets)],

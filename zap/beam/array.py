@@ -139,11 +139,8 @@ class ndarray_pcollection(ndarray_dist):
         return local_rows
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        partitioned_pcollection = (
-            self.pcollection
-        )  # TODO: repartition if needed (currently Spark-only)
         zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
-        partitioned_pcollection | gensym("write_zarr") >> beam.Map(write_chunk_fn)
+        self.pcollection | gensym("write_zarr") >> beam.Map(write_chunk_fn)
 
         result = self.pipeline.run()
         result.wait_until_finish()
@@ -271,7 +268,7 @@ class ndarray_pcollection(ndarray_dist):
     def _boolean_array_index_dist(self, item):
         subset = asarray(item)  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
+        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts),)
 
         # Beam doesn't have a direct equivalent of Spark's zip function, so we use a side input and join here
@@ -326,7 +323,7 @@ class ndarray_pcollection(ndarray_dist):
     def _row_subset(self, item):
         subset = asarray(item[0])  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
+        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
 
         # Beam doesn't have a direct equivalent of Spark's zip function, so we use a side input and join here

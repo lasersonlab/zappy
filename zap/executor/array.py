@@ -81,9 +81,6 @@ class ndarray_executor(ndarray_dist):
         return list(self.dag.compute(self.input))
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        # partitioned_rdd = repartition_chunks(
-        #     self.sc, self.rdd, chunks, self.partition_row_counts
-        # )  # repartition if needed
         zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
         indices = self.dag.add_input(list(range(len(self.partition_row_counts))))
         output = self.dag.transform(
@@ -173,7 +170,7 @@ class ndarray_executor(ndarray_dist):
         # almost identical to row subset below (only lambda has different indexing)
         subset = asarray(item)  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
+        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts),)
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(lambda x, y: x[y], [self.input, side_input])
@@ -208,7 +205,7 @@ class ndarray_executor(ndarray_dist):
     def _row_subset(self, item):
         subset = asarray(item[0])  # materialize
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = [builtins.sum(s) for s in partition_row_subsets]
+        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(lambda x, y: x[y, :], [self.input, side_input])
