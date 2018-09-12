@@ -9,17 +9,8 @@ class ndarray_dist_direct(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 
     def __init__(self, local_rows, shape, chunks, dtype, partition_row_counts=None):
+        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.local_rows = local_rows
-        self.ndim = len(shape)
-        self.shape = shape
-        self.chunks = chunks
-        self.dtype = dtype
-        if partition_row_counts is None:
-            partition_row_counts = [chunks[0]] * (shape[0] // chunks[0])
-            remaining = shape[0] % chunks[0]
-            if remaining != 0:
-                partition_row_counts.append(remaining)
-        self.partition_row_counts = partition_row_counts
 
     def _new(
         self, local_rows, shape=None, chunks=None, dtype=None, partition_row_counts=None
@@ -76,9 +67,6 @@ class ndarray_dist_direct(ndarray_dist):
 
     def _compute(self):
         return self.local_rows
-
-    def _get_partition_row_counts(self):
-        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         # partitioned_rdd = repartition_chunks(

@@ -166,6 +166,21 @@ def median(a):
 
 class ndarray_dist:
 
+    def __init__(self, shape, chunks, dtype, partition_row_counts=None):
+        self.shape = shape
+        self.chunks = chunks
+        self.dtype = dtype
+        if partition_row_counts is None:
+            partition_row_counts = [chunks[0]] * (shape[0] // chunks[0])
+            remaining = shape[0] % chunks[0]
+            if remaining != 0:
+                partition_row_counts.append(remaining)
+        self.partition_row_counts = partition_row_counts
+
+    @property
+    def ndim(self):
+        return len(self.shape)
+
     # Load and store methods
 
     @classmethod
@@ -185,7 +200,7 @@ class ndarray_dist:
 
     def asndarray(self):
         inputs = self._compute()
-        partition_row_counts = self._get_partition_row_counts()
+        partition_row_counts = self.partition_row_counts
         local_row_counts = [len(arr) for arr in inputs]
         assert local_row_counts == list(partition_row_counts), (
             "Local row counts: %s; partition row counts: %s"
@@ -202,9 +217,6 @@ class ndarray_dist:
         """
         :return: a list of array chunks
         """
-        return NotImplemented
-
-    def _get_partition_row_counts(self):
         return NotImplemented
 
     def to_zarr(self, zarr_file, chunks):

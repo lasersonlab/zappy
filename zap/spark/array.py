@@ -21,18 +21,9 @@ class ndarray_rdd(ndarray_dist):
     """A numpy.ndarray backed by a Spark RDD"""
 
     def __init__(self, sc, rdd, shape, chunks, dtype, partition_row_counts=None):
+        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.sc = sc
         self.rdd = rdd
-        self.ndim = len(shape)
-        self.shape = shape
-        self.chunks = chunks
-        self.dtype = dtype
-        if partition_row_counts is None:
-            partition_row_counts = [chunks[0]] * (shape[0] // chunks[0])
-            remaining = shape[0] % chunks[0]
-            if remaining != 0:
-                partition_row_counts.append(remaining)
-        self.partition_row_counts = partition_row_counts
 
     def _new(self, rdd, shape=None, chunks=None, dtype=None, partition_row_counts=None):
         if shape is None:
@@ -85,9 +76,6 @@ class ndarray_rdd(ndarray_dist):
 
     def _compute(self):
         return self.rdd.collect()
-
-    def _get_partition_row_counts(self):
-        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         partitioned_rdd = repartition_chunks(

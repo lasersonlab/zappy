@@ -34,18 +34,9 @@ class ndarray_pcollection(ndarray_dist):
         partition_row_counts=None,
         tmp_dir=None,
     ):
+        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.pipeline = pipeline
         self.pcollection = pcollection
-        self.ndim = len(shape)
-        self.shape = shape
-        self.chunks = chunks
-        self.dtype = dtype
-        if partition_row_counts is None:
-            partition_row_counts = [chunks[0]] * (shape[0] // chunks[0])
-            remaining = shape[0] % chunks[0]
-            if remaining != 0:
-                partition_row_counts.append(remaining)
-        self.partition_row_counts = partition_row_counts
         if tmp_dir is None:
             tmp_dir = tempfile.mkdtemp("-asndarray", "beam-")
         self.tmp_dir = tmp_dir
@@ -146,9 +137,6 @@ class ndarray_pcollection(ndarray_dist):
             local_rows[index] = row
 
         return local_rows
-
-    def _get_partition_row_counts(self):
-        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         partitioned_pcollection = (

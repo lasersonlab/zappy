@@ -13,19 +13,10 @@ class ndarray_executor(ndarray_dist):
     def __init__(
         self, executor, dag, input, shape, chunks, dtype, partition_row_counts=None
     ):
+        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.executor = executor
         self.dag = dag
         self.input = input
-        self.ndim = len(shape)
-        self.shape = shape
-        self.chunks = chunks
-        self.dtype = dtype
-        if partition_row_counts is None:
-            partition_row_counts = [chunks[0]] * (shape[0] // chunks[0])
-            remaining = shape[0] % chunks[0]
-            if remaining != 0:
-                partition_row_counts.append(remaining)
-        self.partition_row_counts = partition_row_counts
 
     # same dag
     def _new(
@@ -88,9 +79,6 @@ class ndarray_executor(ndarray_dist):
 
     def _compute(self):
         return list(self.dag.compute(self.input))
-
-    def _get_partition_row_counts(self):
-        return self.partition_row_counts
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         # partitioned_rdd = repartition_chunks(
