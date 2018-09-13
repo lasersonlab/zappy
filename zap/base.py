@@ -1,4 +1,5 @@
 import builtins
+import copy as cp
 import numbers
 import numpy as np
 import sys
@@ -165,7 +166,6 @@ def median(a):
 
 
 class ndarray_dist:
-
     def __init__(self, shape, chunks, dtype, partition_row_counts=None):
         self.shape = shape
         self.chunks = chunks
@@ -176,6 +176,14 @@ class ndarray_dist:
             if remaining != 0:
                 partition_row_counts.append(remaining)
         self.partition_row_counts = partition_row_counts
+
+    def _new(self, **kwargs):
+        """Copy or update this object with the given keyword parameters."""
+        obj = cp.copy(self) if kwargs.get("copy", True) else self
+        for key, value in kwargs.items():
+            if key != "copy":
+                setattr(obj, key, value)
+        return obj
 
     @property
     def ndim(self):

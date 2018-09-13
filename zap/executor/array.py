@@ -9,7 +9,6 @@ from zap.executor.dag import DAG
 class ndarray_executor(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 
-    # new dag
     def __init__(
         self, executor, dag, input, shape, chunks, dtype, partition_row_counts=None
     ):
@@ -17,46 +16,6 @@ class ndarray_executor(ndarray_dist):
         self.executor = executor
         self.dag = dag
         self.input = input
-
-    # same dag
-    def _new(
-        self, input, shape=None, chunks=None, dtype=None, partition_row_counts=None
-    ):
-        if shape is None:
-            shape = self.shape
-        if chunks is None:
-            chunks = self.chunks
-        if dtype is None:
-            dtype = self.dtype
-        if partition_row_counts is None:
-            partition_row_counts = self.partition_row_counts
-        return ndarray_executor(
-            self.executor, self.dag, input, shape, chunks, dtype, partition_row_counts
-        )
-
-    # same dag
-    def _new_or_copy(
-        self,
-        input,
-        shape=None,
-        chunks=None,
-        dtype=None,
-        partition_row_counts=None,
-        copy=True,
-    ):
-        if copy:
-            return self._new(input, shape, chunks, dtype, partition_row_counts)
-        else:
-            self.input = input
-            if shape is not None:
-                self.shape = shape
-            if chunks is not None:
-                self.chunks = chunks
-            if dtype is not None:
-                self.dtype = dtype
-            if partition_row_counts is not None:
-                self.partition_row_counts = partition_row_counts
-            return self
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
@@ -99,13 +58,11 @@ class ndarray_executor(ndarray_dist):
             dag = DAG(self.executor)
             partitioned_input = [mean]
             input = dag.add_input(partitioned_input)
-            return ndarray_executor(
-                self.executor,
-                dag,
-                input,
-                mean.shape,
-                mean.shape,
-                self.dtype,
+            return self._new(
+                dag=dag,
+                input=input,
+                shape=mean.shape,
+                chunks=mean.shape,
                 partition_row_counts=mean.shape,
             )
         return NotImplemented
@@ -118,18 +75,18 @@ class ndarray_executor(ndarray_dist):
             dag = DAG(self.executor)
             partitioned_input = [s]
             input = dag.add_input(partitioned_input)
-            return ndarray_executor(
-                self.executor,
-                dag,
-                input,
-                s.shape,
-                s.shape,
-                self.dtype,
+            return self._new(
+                dag=dag,
+                input=input,
+                shape=s.shape,
+                chunks=s.shape,
                 partition_row_counts=s.shape,
             )
         elif axis == 1:  # sum of each row
             input = self.dag.transform(lambda x: np.sum(x, axis=1), [self.input])
-            return self._new(input, (self.shape[0],), (self.chunks[0],))
+            return self._new(
+                input=input, shape=(self.shape[0],), chunks=(self.chunks[0],)
+            )
         return NotImplemented
 
     # TODO: more calculation methods here
@@ -138,30 +95,30 @@ class ndarray_executor(ndarray_dist):
 
     def _unary_ufunc(self, func, dtype=None, copy=True):
         input = self.dag.transform(func, [self.input])
-        return self._new_or_copy(input, dtype=dtype, copy=copy)
+        return self._new(input=input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_self(self, func, dtype=None, copy=True):
         input = self.dag.transform(lambda x: func(x, x), [self.input])
-        return self._new_or_copy(input, dtype=dtype, copy=copy)
+        return self._new(input=input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
     ):
         other = asarray(other)  # materialize
         input = self.dag.transform(lambda x: func(x, other), [self.input])
-        return self._new_or_copy(input, dtype=dtype, copy=copy)
+        return self._new(input=input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
         other = asarray(other)  # materialize
         partition_row_subsets = self._copartition(other, self.partition_row_counts)
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(func, [self.input, side_input])
-        return self._new_or_copy(input, dtype=dtype, copy=copy)
+        return self._new(input=input, dtype=dtype, copy=copy)
 
     def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
         if self.partition_row_counts == other.partition_row_counts:
             input = self.dag.transform(func, [self.input, other.input])
-            return self._new_or_copy(input, dtype=dtype, copy=copy)
+            return self._new(input=input, dtype=dtype, copy=copy)
         return NotImplemented
 
     # Slicing
@@ -175,7 +132,7 @@ class ndarray_executor(ndarray_dist):
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(lambda x, y: x[y], [self.input, side_input])
         return self._new(
-            input, shape=new_shape, partition_row_counts=new_partition_row_counts
+            input=input, shape=new_shape, partition_row_counts=new_partition_row_counts
         )
 
     def _column_subset(self, item):
@@ -184,23 +141,13 @@ class ndarray_executor(ndarray_dist):
             new_shape = (self.shape[0], new_num_cols)
             new_chunks = (self.chunks[0], new_num_cols)
             input = self.dag.transform(lambda x: x[:, np.newaxis], [self.input])
-            return self._new(
-                input,
-                shape=new_shape,
-                chunks=new_chunks,
-                partition_row_counts=self.partition_row_counts,
-            )
+            return self._new(input=input, shape=new_shape, chunks=new_chunks)
         subset = asarray(item[1])  # materialize
         new_num_cols = builtins.sum(subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         input = self.dag.transform(lambda x: x[item], [self.input])
-        return self._new(
-            input,
-            shape=new_shape,
-            chunks=new_chunks,
-            partition_row_counts=self.partition_row_counts,
-        )
+        return self._new(input=input, shape=new_shape, chunks=new_chunks)
 
     def _row_subset(self, item):
         subset = asarray(item[0])  # materialize
@@ -210,5 +157,5 @@ class ndarray_executor(ndarray_dist):
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(lambda x, y: x[y, :], [self.input, side_input])
         return self._new(
-            input, shape=new_shape, partition_row_counts=new_partition_row_counts
+            input=input, shape=new_shape, partition_row_counts=new_partition_row_counts
         )

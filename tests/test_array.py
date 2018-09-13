@@ -218,4 +218,3 @@ class TestZapArray:
         )
         arr = z[:]
         assert_allclose(arr, x)
-

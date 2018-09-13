@@ -12,44 +12,6 @@ class ndarray_dist_direct(ndarray_dist):
         ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.local_rows = local_rows
 
-    def _new(
-        self, local_rows, shape=None, chunks=None, dtype=None, partition_row_counts=None
-    ):
-        if shape is None:
-            shape = self.shape
-        if chunks is None:
-            chunks = self.chunks
-        if dtype is None:
-            dtype = self.dtype
-        if partition_row_counts is None:
-            partition_row_counts = self.partition_row_counts
-        return ndarray_dist_direct(
-            local_rows, shape, chunks, dtype, partition_row_counts
-        )
-
-    def _new_or_copy(
-        self,
-        local_rows,
-        shape=None,
-        chunks=None,
-        dtype=None,
-        partition_row_counts=None,
-        copy=True,
-    ):
-        if copy:
-            return self._new(local_rows, shape, chunks, dtype, partition_row_counts)
-        else:
-            self.local_rows = local_rows
-            if shape is not None:
-                self.shape = shape
-            if chunks is not None:
-                self.chunks = chunks
-            if dtype is not None:
-                self.dtype = dtype
-            if partition_row_counts is not None:
-                self.partition_row_counts = partition_row_counts
-            return self
-
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, arr, chunks):
@@ -74,7 +36,11 @@ class ndarray_dist_direct(ndarray_dist):
         remaining = self.shape[0] % chunks[0]
         if remaining != 0:
             partition_row_counts.append(remaining)
-        return self._new_or_copy(self._copartition(arr, partition_row_counts), chunks=chunks, partition_row_counts=partition_row_counts, copy=True)
+        return self._new(
+            local_rows=self._copartition(arr, partition_row_counts),
+            chunks=chunks,
+            partition_row_counts=partition_row_counts,
+        )
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
@@ -91,7 +57,10 @@ class ndarray_dist_direct(ndarray_dist):
             mean = np.sum([res[1] for res in result], axis=0) / total_count
             local_rows = [mean]
             return self._new(
-                local_rows, mean.shape, mean.shape, partition_row_counts=mean.shape
+                local_rows=local_rows,
+                shape=mean.shape,
+                chunks=mean.shape,
+                partition_row_counts=mean.shape,
             )
         return NotImplemented
 
@@ -100,12 +69,17 @@ class ndarray_dist_direct(ndarray_dist):
             result = [np.sum(x, axis=0) for x in self.local_rows]
             s = np.sum(result, axis=0)
             local_rows = [s]
-            return self._new(local_rows, s.shape, s.shape, partition_row_counts=s.shape)
+            return self._new(
+                local_rows=local_rows,
+                shape=s.shape,
+                chunks=s.shape,
+                partition_row_counts=s.shape,
+            )
         elif axis == 1:  # sum of each row
             return self._new(
-                [np.sum(x, axis=1) for x in self.local_rows],
-                (self.shape[0],),
-                (self.chunks[0],),
+                local_rows=[np.sum(x, axis=1) for x in self.local_rows],
+                shape=(self.shape[0],),
+                chunks=(self.chunks[0],),
             )
         return NotImplemented
 
@@ -115,18 +89,18 @@ class ndarray_dist_direct(ndarray_dist):
 
     def _unary_ufunc(self, func, dtype=None, copy=True):
         new_local_rows = [func(x) for x in self.local_rows]
-        return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
 
     def _binary_ufunc_self(self, func, dtype=None, copy=True):
         new_local_rows = [func(x, x) for x in self.local_rows]
-        return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
     ):
         other = asarray(other)  # materialize
         new_local_rows = [func(x, other) for x in self.local_rows]
-        return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
         other = asarray(other)  # materialize
@@ -134,14 +108,14 @@ class ndarray_dist_direct(ndarray_dist):
         new_local_rows = [
             func(p[0], p[1]) for p in zip(self.local_rows, partition_row_subsets)
         ]
-        return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
 
     def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
         if self.partition_row_counts == other.partition_row_counts:
             new_local_rows = [
                 func(p[0], p[1]) for p in zip(self.local_rows, other.local_rows)
             ]
-            return self._new_or_copy(new_local_rows, dtype=dtype, copy=copy)
+            return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
         return NotImplemented
 
     # Slicing
@@ -153,7 +127,9 @@ class ndarray_dist_direct(ndarray_dist):
         new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts),)
         return self._new(
-            [p[0][p[1]] for p in zip(self.local_rows, partition_row_subsets)],
+            local_rows=[
+                p[0][p[1]] for p in zip(self.local_rows, partition_row_subsets)
+            ],
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
@@ -164,20 +140,18 @@ class ndarray_dist_direct(ndarray_dist):
             new_shape = (self.shape[0], new_num_cols)
             new_chunks = (self.chunks[0], new_num_cols)
             return self._new(
-                [x[:, np.newaxis] for x in self.local_rows],
+                local_rows=[x[:, np.newaxis] for x in self.local_rows],
                 shape=new_shape,
                 chunks=new_chunks,
-                partition_row_counts=self.partition_row_counts,
             )
         subset = asarray(item[1])  # materialize
         new_num_cols = builtins.sum(subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(
-            [x[item] for x in self.local_rows],
+            local_rows=[x[item] for x in self.local_rows],
             shape=new_shape,
             chunks=new_chunks,
-            partition_row_counts=self.partition_row_counts,
         )
 
     def _row_subset(self, item):
@@ -186,7 +160,9 @@ class ndarray_dist_direct(ndarray_dist):
         new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         return self._new(
-            [p[0][p[1], :] for p in zip(self.local_rows, partition_row_subsets)],
+            local_rows=[
+                p[0][p[1], :] for p in zip(self.local_rows, partition_row_subsets)
+            ],
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )

@@ -9,6 +9,7 @@ from pyspark.sql import SparkSession
 
 TESTS = [0, 1]
 
+
 class TestZapArray:
     @pytest.fixture()
     def x(self):
@@ -51,6 +52,7 @@ class TestZapArray:
         assert len(actual_rows) == len(expected_rows)
         for i in range(len(expected_rows)):
             from numpy.testing import assert_array_equal
+
             assert_array_equal(expected_rows[i], actual_rows[i])
 
     def test_no_op(self, x, xd):
@@ -66,7 +68,7 @@ class TestZapArray:
 
     def test_uneven(self, x, xd):
         subset = np.array([True] * 12)
-        subset[7] = False # drop a row
+        subset[7] = False  # drop a row
         xd = xd[subset, :]
         xd = xd._repartition_chunks((5, 1))
         assert xd.partition_row_counts == [5, 5, 1]

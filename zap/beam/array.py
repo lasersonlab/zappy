@@ -41,55 +41,6 @@ class ndarray_pcollection(ndarray_dist):
             tmp_dir = tempfile.mkdtemp("-asndarray", "beam-")
         self.tmp_dir = tmp_dir
 
-    def _new(
-        self,
-        pcollection,
-        shape=None,
-        chunks=None,
-        dtype=None,
-        partition_row_counts=None,
-    ):
-        if shape is None:
-            shape = self.shape
-        if chunks is None:
-            chunks = self.chunks
-        if dtype is None:
-            dtype = self.dtype
-        if partition_row_counts is None:
-            partition_row_counts = self.partition_row_counts
-        return ndarray_pcollection(
-            self.pipeline,
-            pcollection,
-            shape,
-            chunks,
-            dtype,
-            partition_row_counts,
-            self.tmp_dir,
-        )
-
-    def _new_or_copy(
-        self,
-        pcollection,
-        shape=None,
-        chunks=None,
-        dtype=None,
-        partition_row_counts=None,
-        copy=True,
-    ):
-        if copy:
-            return self._new(pcollection, shape, chunks, dtype, partition_row_counts)
-        else:
-            self.pcollection = pcollection
-            if shape is not None:
-                self.shape = shape
-            if chunks is not None:
-                self.chunks = chunks
-            if dtype is not None:
-                self.dtype = dtype
-            if partition_row_counts is not None:
-                self.partition_row_counts = partition_row_counts
-        return self
-
     def close(self):
         shutil.rmtree(self.tmp_dir)
 
@@ -161,13 +112,18 @@ class ndarray_pcollection(ndarray_dist):
             )  # only one row
             new_shape = (a.shape[1],)
             return a._new(
-                new_pcollection, new_shape, new_shape, partition_row_counts=new_shape
+                pcollection=new_pcollection,
+                shape=new_shape,
+                chunks=new_shape,
+                partition_row_counts=new_shape,
             )
         elif axis == 1:  # sum of each row
             new_pcollection = a.pcollection | gensym("sum") >> beam.Map(
                 lambda pair: (pair[0], np.sum(pair[1], axis=1))
             )
-            return a._new(new_pcollection, (a.shape[0],), (a.chunks[0],))
+            return a._new(
+                pcollection=new_pcollection, shape=(a.shape[0],), chunks=(a.chunks[0],)
+            )
         return NotImplemented
 
     def mean(a, axis=None):
@@ -211,7 +167,10 @@ class ndarray_pcollection(ndarray_dist):
             )
             new_shape = (a.shape[1],)
             return a._new(
-                new_pcollection, new_shape, new_shape, partition_row_counts=new_shape
+                pcollection=new_pcollection,
+                shape=new_shape,
+                chunks=new_shape,
+                partition_row_counts=new_shape,
             )
         return NotImplemented
 
@@ -225,13 +184,13 @@ class ndarray_pcollection(ndarray_dist):
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1]))
         )
-        return self._new_or_copy(new_pcollection, dtype=dtype, copy=copy)
+        return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
 
     def _binary_ufunc_self(self, func, dtype=None, copy=True):
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1], pair[1]))
         )
-        return self._new_or_copy(new_pcollection, dtype=dtype, copy=copy)
+        return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
@@ -241,7 +200,7 @@ class ndarray_pcollection(ndarray_dist):
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1], other))
         )
-        return self._new_or_copy(new_pcollection, dtype=dtype, copy=copy)
+        return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
         # TODO: Beam (side input)
@@ -260,7 +219,7 @@ class ndarray_pcollection(ndarray_dist):
                 | beam.CoGroupByKey()
                 | gensym(func.__name__) >> beam.Map(combine_indexed_dict)
             )
-            return self._new_or_copy(new_pcollection, dtype=dtype, copy=copy)
+            return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
         return NotImplemented
 
     # Slicing
@@ -285,9 +244,8 @@ class ndarray_pcollection(ndarray_dist):
             join_row_with_subset, AsDict(subset_pcollection)
         )
 
-        # leave new chunks undefined since they are not necessarily equal-sized
         return self._new(
-            new_pcollection,
+            pcollection=new_pcollection,
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
@@ -301,10 +259,7 @@ class ndarray_pcollection(ndarray_dist):
                 "column_subset_newaxis"
             ) >> beam.Map(lambda pair: (pair[0], pair[1][:, np.newaxis]))
             return self._new(
-                new_pcollection,
-                shape=new_shape,
-                chunks=new_chunks,
-                partition_row_counts=self.partition_row_counts,
+                pcollection=new_pcollection, shape=new_shape, chunks=new_chunks
             )
         subset = asarray(item[1])  # materialize
         new_pcollection = self.pcollection | gensym("column_subset") >> beam.Map(
@@ -314,10 +269,7 @@ class ndarray_pcollection(ndarray_dist):
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(
-            new_pcollection,
-            shape=new_shape,
-            chunks=new_chunks,
-            partition_row_counts=self.partition_row_counts,
+            pcollection=new_pcollection, shape=new_shape, chunks=new_chunks
         )
 
     def _row_subset(self, item):
@@ -340,9 +292,8 @@ class ndarray_pcollection(ndarray_dist):
             join_row_with_subset, AsDict(subset_pcollection)
         )
 
-        # leave new chunks undefined since they are not necessarily equal-sized
         return self._new(
-            new_pcollection,
+            pcollection=new_pcollection,
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )

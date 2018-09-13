@@ -25,40 +25,6 @@ class ndarray_rdd(ndarray_dist):
         self.sc = sc
         self.rdd = rdd
 
-    def _new(self, rdd, shape=None, chunks=None, dtype=None, partition_row_counts=None):
-        if shape is None:
-            shape = self.shape
-        if chunks is None:
-            chunks = self.chunks
-        if dtype is None:
-            dtype = self.dtype
-        if partition_row_counts is None:
-            partition_row_counts = self.partition_row_counts
-        return ndarray_rdd(self.sc, rdd, shape, chunks, dtype, partition_row_counts)
-
-    def _new_or_copy(
-        self,
-        rdd,
-        shape=None,
-        chunks=None,
-        dtype=None,
-        partition_row_counts=None,
-        copy=True,
-    ):
-        if copy:
-            return self._new(rdd, shape, chunks, dtype, partition_row_counts)
-        else:
-            self.rdd = rdd
-            if shape is not None:
-                self.shape = shape
-            if chunks is not None:
-                self.chunks = chunks
-            if dtype is not None:
-                self.dtype = dtype
-            if partition_row_counts is not None:
-                self.partition_row_counts = partition_row_counts
-            return self
-
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, sc, arr, chunks):
@@ -78,12 +44,18 @@ class ndarray_rdd(ndarray_dist):
         return self.rdd.collect()
 
     def _repartition_chunks(self, chunks):
-        partitioned_rdd = repartition_chunks(self.sc, self.rdd, chunks, self.partition_row_counts)
+        partitioned_rdd = repartition_chunks(
+            self.sc, self.rdd, chunks, self.partition_row_counts
+        )
         partition_row_counts = [chunks[0]] * (self.shape[0] // chunks[0])
         remaining = self.shape[0] % chunks[0]
         if remaining != 0:
             partition_row_counts.append(remaining)
-        return self._new_or_copy(partitioned_rdd, chunks=chunks, partition_row_counts=partition_row_counts, copy=True)
+        return self._new(
+            rdd=partitioned_rdd,
+            chunks=chunks,
+            partition_row_counts=partition_row_counts,
+        )
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
@@ -104,7 +76,10 @@ class ndarray_rdd(ndarray_dist):
             mean = np.sum([res[1] for res in result], axis=0) / total_count
             rdd = self.rdd.ctx.parallelize([mean])
             return self._new(
-                rdd, mean.shape, mean.shape, partition_row_counts=mean.shape
+                rdd=rdd,
+                shape=mean.shape,
+                chunks=mean.shape,
+                partition_row_counts=mean.shape,
             )
         return NotImplemented
 
@@ -113,12 +88,14 @@ class ndarray_rdd(ndarray_dist):
             result = self.rdd.map(lambda x: np.sum(x, axis=0)).collect()
             s = np.sum(result, axis=0)
             rdd = self.rdd.ctx.parallelize([s])
-            return self._new(rdd, s.shape, s.shape, partition_row_counts=s.shape)
+            return self._new(
+                rdd=rdd, shape=s.shape, chunks=s.shape, partition_row_counts=s.shape
+            )
         elif axis == 1:  # sum of each row
             return self._new(
-                self.rdd.map(lambda x: np.sum(x, axis=1)),
-                (self.shape[0],),
-                (self.chunks[0],),
+                rdd=self.rdd.map(lambda x: np.sum(x, axis=1)),
+                shape=(self.shape[0],),
+                chunks=(self.chunks[0],),
             )
         return NotImplemented
 
@@ -128,11 +105,11 @@ class ndarray_rdd(ndarray_dist):
 
     def _unary_ufunc(self, func, dtype=None, copy=True):
         new_rdd = self.rdd.map(lambda x: func(x))
-        return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
 
     def _binary_ufunc_self(self, func, dtype=None, copy=True):
         new_rdd = self.rdd.map(lambda x: func(x, x))
-        return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, dtype=None, copy=True
@@ -140,7 +117,7 @@ class ndarray_rdd(ndarray_dist):
         other = asarray(other)  # materialize
         # TODO: should send 'other' as a Spark broadcast
         new_rdd = self.rdd.map(lambda x: func(x, other))
-        return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
         other = asarray(other)  # materialize
@@ -149,12 +126,12 @@ class ndarray_rdd(ndarray_dist):
             partition_row_subsets, len(partition_row_subsets)
         )
         new_rdd = self.rdd.zip(repartitioned_other_rdd).map(lambda p: func(p[0], p[1]))
-        return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
 
     def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
         if self.partition_row_counts == other.partition_row_counts:
             new_rdd = self.rdd.zip(other.rdd).map(lambda p: func(p[0], p[1]))
-            return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
+            return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
         elif other.shape[1] == 1:
             partition_row_subsets = self._copartition(
                 other.asndarray(), self.partition_row_counts
@@ -165,7 +142,7 @@ class ndarray_rdd(ndarray_dist):
             new_rdd = self.rdd.zip(repartitioned_other_rdd).map(
                 lambda p: func(p[0], p[1])
             )
-            return self._new_or_copy(new_rdd, dtype=dtype, copy=copy)
+            return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
         return NotImplemented
 
     # Slicing
@@ -175,12 +152,11 @@ class ndarray_rdd(ndarray_dist):
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts),)
-        # leave new chunks undefined since they are not necessarily equal-sized
         subset_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)
         )
         return self._new(
-            self.rdd.zip(subset_rdd).map(lambda p: p[0][p[1]]),
+            rdd=self.rdd.zip(subset_rdd).map(lambda p: p[0][p[1]]),
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
@@ -191,20 +167,16 @@ class ndarray_rdd(ndarray_dist):
             new_shape = (self.shape[0], new_num_cols)
             new_chunks = (self.chunks[0], new_num_cols)
             return self._new(
-                self.rdd.map(lambda x: x[:, np.newaxis]),
+                rdd=self.rdd.map(lambda x: x[:, np.newaxis]),
                 shape=new_shape,
                 chunks=new_chunks,
-                partition_row_counts=self.partition_row_counts,
             )
         subset = asarray(item[1])  # materialize
         new_num_cols = builtins.sum(subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(
-            self.rdd.map(lambda x: x[item]),
-            shape=new_shape,
-            chunks=new_chunks,
-            partition_row_counts=self.partition_row_counts,
+            rdd=self.rdd.map(lambda x: x[item]), shape=new_shape, chunks=new_chunks
         )
 
     def _row_subset(self, item):
@@ -212,12 +184,11 @@ class ndarray_rdd(ndarray_dist):
         partition_row_subsets = self._copartition(subset, self.partition_row_counts)
         new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
-        # leave new chunks undefined since they are not necessarily equal-sized
         subset_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)
         )
         return self._new(
-            self.rdd.zip(subset_rdd).map(lambda p: p[0][p[1], :]),
+            rdd=self.rdd.zip(subset_rdd).map(lambda p: p[0][p[1], :]),
             shape=new_shape,
             partition_row_counts=new_partition_row_counts,
         )
