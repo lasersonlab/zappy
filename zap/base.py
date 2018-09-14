@@ -6,7 +6,7 @@ import sys
 
 from functools import partial
 
-from zap.zarr_spark import (
+from zap.zarr_util import (
     get_chunk_indices,
     read_zarr_chunk,
     write_chunk,
@@ -228,10 +228,12 @@ class ndarray_dist:
         return NotImplemented
 
     def _repartition_chunks(self, chunks):
-        # subclasses should implement this to repartition to equal-sized chunks
+        # subclasses should implement this to repartition to equal-sized chunks (except the last partition, which may be smaller)
         return NotImplemented
 
     def _repartition_if_necessary(self, chunks):
+        # if all except last partition have c rows...
+        # ... then no need to shuffle, since already partitioned correctly
         if all([count == chunks[0] for count in self.partition_row_counts[:-1]]):
             return self
         else:

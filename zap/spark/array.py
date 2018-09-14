@@ -3,7 +3,7 @@ import numpy as np
 import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.zarr_spark import repartition_chunks
+from zap.zarr_util import calculate_partition_boundaries, extract_partial_chunks
 
 
 def array_rdd(sc, arr, chunks):
@@ -44,9 +44,42 @@ class ndarray_rdd(ndarray_dist):
         return self.rdd.collect()
 
     def _repartition_chunks(self, chunks):
-        partitioned_rdd = repartition_chunks(
-            self.sc, self.rdd, chunks, self.partition_row_counts
+        c = chunks[0]  # the chunk size for rows
+
+        partition_row_ranges, total_rows, new_num_partitions = calculate_partition_boundaries(
+            chunks, self.partition_row_counts
         )
+
+        def extract(iterator):
+            # iterator has just a single element for map partitions
+            return extract_partial_chunks(list(iterator)[0], chunks)
+
+        def identity_partition_func(key):
+            return key
+
+        def combine_partial_chunks(pair):
+            """
+            Combine multiple non-overlapping parts of a new chunk into a single chunk.
+            """
+            new_index = pair[0]
+            # last chunk has fewer than c rows
+            if new_index == new_num_partitions - 1 and total_rows % c != 0:
+                last_chunk_rows = total_rows % c
+                arr = np.zeros((last_chunk_rows, chunks[1]))
+            else:
+                arr = np.zeros(chunks)
+            for ((new_start_offset, new_end_offset), partial_chunk) in pair[1]:
+                arr[new_start_offset:new_end_offset] = partial_chunk
+            return arr
+
+        partitioned_rdd = (
+            self.sc.parallelize(partition_row_ranges, len(partition_row_ranges))
+            .zip(self.rdd)
+            .mapPartitions(extract)
+            .groupByKey(new_num_partitions, identity_partition_func)
+            .map(combine_partial_chunks)
+        )
+
         partition_row_counts = [chunks[0]] * (self.shape[0] // chunks[0])
         remaining = self.shape[0] % chunks[0]
         if remaining != 0:

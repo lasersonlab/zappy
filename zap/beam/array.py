@@ -1,9 +1,6 @@
 import apache_beam as beam
 import builtins
-import os
 import numpy as np
-import shutil
-import tempfile
 import zarr
 
 from apache_beam.pvalue import AsDict
@@ -25,24 +22,11 @@ class ndarray_pcollection(ndarray_dist):
     """A numpy.ndarray backed by a Beam PCollection"""
 
     def __init__(
-        self,
-        pipeline,
-        pcollection,
-        shape,
-        chunks,
-        dtype,
-        partition_row_counts=None,
-        tmp_dir=None,
+        self, pipeline, pcollection, shape, chunks, dtype, partition_row_counts=None
     ):
         ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.pipeline = pipeline
         self.pcollection = pcollection
-        if tmp_dir is None:
-            tmp_dir = tempfile.mkdtemp("-asndarray", "beam-")
-        self.tmp_dir = tmp_dir
-
-    def close(self):
-        shutil.rmtree(self.tmp_dir)
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
@@ -65,26 +49,27 @@ class ndarray_pcollection(ndarray_dist):
         return cls.from_ndarray(pipeline, arr, arr.chunks)
 
     def _compute(self):
-        # create a temporary subdirectory to materialize arrays to
+        # create a zarr groups to materialize arrays to
         sym = gensym("asndarray")
-        subdir = "%s/%s" % (self.tmp_dir, sym)
-        os.mkdir(subdir)
+        store = zarr.TempStore()
+        root = zarr.open(store, mode="w")  # TODO: allow cloud storage
 
-        # save files
+        # save arrays
         def save(indexed_row):
             index, row = indexed_row
-            with open("%s/%s" % (subdir, index), "w") as file:
-                np.save(file, row)
+            # remove array in case we are being materialized again
+            zarr.storage.rmdir(store, "/{}".format(index))
+            root = zarr.group(store)
+            root.array(str(index), row, chunks=False)
 
         self.pcollection | sym >> beam.Map(save)
         result = self.pipeline.run()
         result.wait_until_finish()
 
-        # read back files
+        # read back arrays
         local_rows = [None] * len(self.partition_row_counts)
-        for filename in os.listdir(subdir):
-            index = int(filename)
-            row = np.load(os.path.join(subdir, filename))
+        for (name, row) in root.arrays():
+            index = int(name)
             local_rows[index] = row
 
         return local_rows

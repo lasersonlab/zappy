@@ -1,3 +1,4 @@
+import concurrent.futures
 import logging
 import pytest
 import zap.base as np  # zap includes everything in numpy, with some overrides and new functions
@@ -7,7 +8,7 @@ import zap.spark.array
 
 from pyspark.sql import SparkSession
 
-TESTS = [0, 1]
+TESTS = [0, 1, 2]
 
 
 class TestZapArray:
@@ -33,6 +34,11 @@ class TestZapArray:
             yield zap.direct.array.ndarray_dist_direct.from_ndarray(x.copy(), (5, 1))
         elif request.param == 1:
             yield zap.spark.array.array_rdd(sc, x.copy(), (5, 1))
+        elif request.param == 2:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.ndarray_executor.from_ndarray(
+                    executor, x.copy(), (5, 1)
+                )
 
     @pytest.fixture(params=TESTS)
     def xd34(self, sc, x, request):
@@ -40,6 +46,11 @@ class TestZapArray:
             yield zap.direct.array.ndarray_dist_direct.from_ndarray(x.copy(), (3, 4))
         elif request.param == 1:
             yield zap.spark.array.array_rdd(sc, x.copy(), (3, 4))
+        elif request.param == 2:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.ndarray_executor.from_ndarray(
+                    executor, x.copy(), (3, 4)
+                )
 
     @pytest.fixture(params=TESTS)
     def xd43(self, sc, x, request):
@@ -47,6 +58,11 @@ class TestZapArray:
             yield zap.direct.array.ndarray_dist_direct.from_ndarray(x.copy(), (4, 3))
         elif request.param == 1:
             yield zap.spark.array.array_rdd(sc, x.copy(), (4, 3))
+        elif request.param == 2:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.ndarray_executor.from_ndarray(
+                    executor, x.copy(), (4, 3)
+                )
 
     def check(self, expected_rows, actual_rows):
         assert len(actual_rows) == len(expected_rows)

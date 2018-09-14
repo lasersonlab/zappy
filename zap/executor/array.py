@@ -4,6 +4,7 @@ import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
 from zap.executor.dag import DAG
+from zap.zarr_util import calculate_partition_boundaries, extract_partial_chunks
 
 
 class ndarray_executor(ndarray_dist):
@@ -38,6 +39,56 @@ class ndarray_executor(ndarray_dist):
 
     def _compute(self):
         return list(self.dag.compute(self.input))
+
+    def _repartition_chunks(self, chunks):
+        c = chunks[0]
+        partition_row_ranges, total_rows, new_num_partitions = calculate_partition_boundaries(
+            chunks, self.partition_row_counts
+        )
+
+        # make a zarr group for each partition
+        root = zarr.group()  # TODO: use a store
+        for index in range(new_num_partitions):
+            root.create_group(str(index))
+
+        def tmp_store(pairs):
+            for pair in pairs:
+                index, offsets, partial_chunk = pair[0], pair[1][0], pair[1][1]
+                g = root.require_group(str(index))
+                g.array("%s-%s" % (offsets[0], offsets[1]), partial_chunk, chunks=False)
+
+        x1 = self.dag.add_input(partition_row_ranges)
+        x2 = self.dag.transform(
+            lambda x, y: extract_partial_chunks((x, y), chunks), [x1, self.input]
+        )
+
+        x3 = self.dag.transform(tmp_store, [x2])
+
+        # run computation to save partial chunks
+        list(self.dag.compute(x3))
+
+        # create a new computation to read partial chunks
+        def tmp_load(new_index):
+            # last chunk has fewer than c rows
+            if new_index == new_num_partitions - 1 and total_rows % c != 0:
+                last_chunk_rows = total_rows % c
+                arr = np.zeros((last_chunk_rows, chunks[1]))
+            else:
+                arr = np.zeros(chunks)
+            g = root.require_group(str(new_index))
+            for (name, partial_chunk) in g.arrays():
+                new_start_offset, new_end_offset = [int(n) for n in name.split("-")]
+                arr[new_start_offset:new_end_offset] = partial_chunk
+            return arr
+
+        dag = DAG(self.executor)
+        input = dag.add_input(list(range(new_num_partitions)))
+        input = dag.transform(tmp_load, [input])
+
+        # TODO: delete intermediate store when dag is computed
+        return ndarray_executor(
+            self.executor, dag, input, self.shape, chunks, self.dtype
+        )
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
         zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
