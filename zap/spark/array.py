@@ -6,11 +6,11 @@ from zap.base import *  # include everything in zap.base and hence base numpy
 from zap.zarr_util import calculate_partition_boundaries, extract_partial_chunks
 
 
-def array_rdd(sc, arr, chunks):
+def from_ndarray(sc, arr, chunks):
     return ndarray_rdd.from_ndarray(sc, arr, chunks)
 
 
-def array_rdd_zarr(sc, zarr_file):
+def from_zarr(sc, zarr_file):
     return ndarray_rdd.from_zarr(sc, zarr_file)
 
 

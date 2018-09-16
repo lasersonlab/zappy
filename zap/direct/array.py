@@ -5,6 +5,14 @@ import zarr
 from zap.base import *  # include everything in zap.base and hence base numpy
 
 
+def from_ndarray(arr, chunks):
+    return ndarray_dist_direct.from_ndarray(arr, chunks)
+
+
+def from_zarr(zarr_file):
+    return ndarray_dist_direct.from_zarr(zarr_file)
+
+
 class ndarray_dist_direct(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 

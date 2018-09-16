@@ -62,38 +62,34 @@ class TestZapArray:
     def xd(self, sc, x, xz, chunks, request):
         if request.param == 0:
             # zarr direct
-            yield zap.direct.array.ndarray_dist_direct.from_zarr(xz)
+            yield zap.direct.array.from_zarr(xz)
         elif request.param == 1:
             # in-memory ndarray direct
-            yield zap.direct.array.ndarray_dist_direct.from_ndarray(x.copy(), chunks)
+            yield zap.direct.array.from_ndarray(x.copy(), chunks)
         elif request.param == 2:
             # zarr spark
-            yield zap.spark.array.array_rdd_zarr(sc, xz)
+            yield zap.spark.array.from_zarr(sc, xz)
         elif request.param == 3:
             # in-memory ndarray spark
-            yield zap.spark.array.array_rdd(sc, x.copy(), chunks)
+            yield zap.spark.array.from_ndarray(sc, x.copy(), chunks)
         elif request.param == 4:
             # zarr beam
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.array.ndarray_pcollection.from_zarr(pipeline, xz)
+            yield zap.beam.array.from_zarr(pipeline, xz)
         elif request.param == 5:
             # in-memory ndarray beam
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.array.ndarray_pcollection.from_ndarray(
-                pipeline, x.copy(), chunks
-            )
+            yield zap.beam.array.from_ndarray(pipeline, x.copy(), chunks)
         elif request.param == 6:
             # zarr executor
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.ndarray_executor.from_zarr(executor, xz)
+                yield zap.executor.array.from_zarr(executor, xz)
         elif request.param == 7:
             # in-memory ndarray executor
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.ndarray_executor.from_ndarray(
-                    executor, x.copy(), chunks
-                )
+                yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
 
     def test_identity(self, x, xd):
         assert_allclose(xd.asndarray(), x)

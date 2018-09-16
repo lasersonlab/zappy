@@ -7,6 +7,14 @@ from zap.executor.dag import DAG
 from zap.zarr_util import calculate_partition_boundaries, extract_partial_chunks
 
 
+def from_ndarray(executor, arr, chunks):
+    return ndarray_executor.from_ndarray(executor, arr, chunks)
+
+
+def from_zarr(executor, zarr_file):
+    return ndarray_executor.from_zarr(executor, zarr_file)
+
+
 class ndarray_executor(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 

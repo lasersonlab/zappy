@@ -6,6 +6,15 @@ import zarr
 from apache_beam.pvalue import AsDict
 from zap.base import *  # include everything in zap.base and hence base numpy
 
+
+def from_ndarray(pipeline, arr, chunks):
+    return ndarray_pcollection.from_ndarray(pipeline, arr, chunks)
+
+
+def from_zarr(pipeline, zarr_file):
+    return ndarray_pcollection.from_zarr(pipeline, zarr_file)
+
+
 sym_counter = 0
 
 
