@@ -1,0 +1,6 @@
+future
+numpy
+pyspark
+pytest
+tox
+zarr
