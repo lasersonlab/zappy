@@ -2,6 +2,8 @@
 
 Zap is for distributed processing of chunked Numpy arrays on engines like Apache Spark and Apache Beam.
 
+[![Build Status](https://travis-ci.org/lasersonlab/zap.svg?branch=master)](https://travis-ci.org/lasersonlab/zap)
+
 The `zap.base` module defines a `ndarray_dist` class that exposes the same interface as `numpy.ndarray`, and which
 is backed by distributed storage and processing. The array is broken into chunks, which is typically loaded from Zarr,
 and each chunk is processed independently.
