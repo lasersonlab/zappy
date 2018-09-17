@@ -124,31 +124,30 @@ class ndarray_executor(ndarray_dist):
                 chunks=mean.shape,
                 partition_row_counts=mean.shape,
             )
+        elif axis == 1:
+            return self._calc_func_axis_rowwise(np.mean, axis)
         return NotImplemented
 
-    def sum(self, axis=None):
-        if axis == 0:  # sum of each column
-            result = [np.sum(x, axis=0) for x in self._compute()]
-            s = np.sum(result, axis=0)
+    def _calc_func_axis_rowwise(self, func, axis):
+        input = self.dag.transform(lambda x: func(x, axis=axis), [self.input])
+        return self._new(input=input, shape=(self.shape[0],), chunks=(self.chunks[0],))
+
+    def _calc_func_axis_distributive(self, func, axis):
+        if axis == 0:  # column-wise
+            per_chunk_result = [func(x, axis=0) for x in self._compute()]
+            result = func(per_chunk_result, axis=0)
             # new dag
             dag = DAG(self.executor)
-            partitioned_input = [s]
+            partitioned_input = [result]
             input = dag.add_input(partitioned_input)
             return self._new(
                 dag=dag,
                 input=input,
-                shape=s.shape,
-                chunks=s.shape,
-                partition_row_counts=s.shape,
-            )
-        elif axis == 1:  # sum of each row
-            input = self.dag.transform(lambda x: np.sum(x, axis=1), [self.input])
-            return self._new(
-                input=input, shape=(self.shape[0],), chunks=(self.chunks[0],)
+                shape=result.shape,
+                chunks=result.shape,
+                partition_row_counts=result.shape,
             )
         return NotImplemented
-
-    # TODO: more calculation methods here
 
     # Distributed ufunc internal implementation
 

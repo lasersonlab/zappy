@@ -70,28 +70,29 @@ class ndarray_dist_direct(ndarray_dist):
                 chunks=mean.shape,
                 partition_row_counts=mean.shape,
             )
+        elif axis == 1:
+            return self._calc_func_axis_rowwise(np.mean, axis)
         return NotImplemented
 
-    def sum(self, axis=None):
-        if axis == 0:  # sum of each column
-            result = [np.sum(x, axis=0) for x in self.local_rows]
-            s = np.sum(result, axis=0)
-            local_rows = [s]
+    def _calc_func_axis_rowwise(self, func, axis):
+        return self._new(
+            local_rows=[func(x, axis=axis) for x in self.local_rows],
+            shape=(self.shape[0],),
+            chunks=(self.chunks[0],),
+        )
+
+    def _calc_func_axis_distributive(self, func, axis):
+        if axis == 0:  # column-wise
+            per_chunk_result = [func(x, axis=0) for x in self.local_rows]
+            result = func(per_chunk_result, axis=0)
+            local_rows = [result]
             return self._new(
                 local_rows=local_rows,
-                shape=s.shape,
-                chunks=s.shape,
-                partition_row_counts=s.shape,
-            )
-        elif axis == 1:  # sum of each row
-            return self._new(
-                local_rows=[np.sum(x, axis=1) for x in self.local_rows],
-                shape=(self.shape[0],),
-                chunks=(self.chunks[0],),
+                shape=result.shape,
+                chunks=result.shape,
+                partition_row_counts=result.shape,
             )
         return NotImplemented
-
-    # TODO: more calculation methods here
 
     # Distributed ufunc internal implementation
 

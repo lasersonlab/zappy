@@ -187,13 +187,15 @@ class TestZapArray:
         x = np.sum(x, axis=1)
         assert_allclose(xd.asndarray(), x)
 
-    def test_mean(self, x, xd):
-        def mean(x):
-            return x.mean(axis=0)
+    def test_mean_cols(self, x, xd):
+        xd = np.mean(xd, axis=0)
+        x = np.mean(x, axis=0)
+        assert_allclose(xd.asndarray(), x)
 
-        meannps = mean(xd).asndarray()
-        meannp = mean(x)
-        assert_allclose(meannps, meannp)
+    def test_mean_rows(self, x, xd):
+        xd = np.mean(xd, axis=1)
+        x = np.mean(x, axis=1)
+        assert_allclose(xd.asndarray(), x)
 
     def test_var(self, x, xd):
         def var(x):

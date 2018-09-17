@@ -150,8 +150,38 @@ for ufunc_name in UFUNC_NAMES:
 
 
 @_delegate_to_np
+def argmax(a, axis=None):
+    return a.argmax(axis)
+
+
+@_delegate_to_np
+def amin(a, axis=None):
+    return a.min(axis)
+
+
+@_delegate_to_np
+def argmin(a, axis=None):
+    return a.argmin(axis)
+
+
+@_delegate_to_np
 def sum(a, axis=None):
     return a.sum(axis)
+
+
+@_delegate_to_np
+def prod(a, axis=None):
+    return a.sum(axis)
+
+
+@_delegate_to_np
+def all(a, axis=None):
+    return a.all(axis)
+
+
+@_delegate_to_np
+def any(a, axis=None):
+    return a.any(axis)
 
 
 @_delegate_to_np
@@ -267,10 +297,55 @@ class ndarray_dist:
     def mean(self, axis=None):
         return NotImplemented
 
+    def argmax(self, axis=None):
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.argmax, axis)
+        return self._calc_func_axis_distributive(np.argmax, axis)
+
+    def min(self, axis=None):
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.amin, axis)
+        return self._calc_func_axis_distributive(np.amin, axis)
+
+    def argmin(self, axis=None):
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.argmin, axis)
+        return self._calc_func_axis_distributive(np.argmin, axis)
+
     def sum(self, axis=None):
-        return NotImplemented
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.sum, axis)
+        return self._calc_func_axis_distributive(np.sum, axis)
+
+    def prod(self, axis=None):
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.prod, axis)
+        return self._calc_func_axis_distributive(np.prod, axis)
+
+    def all(self, axis=None):
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.all, axis)
+        return self._calc_func_axis_distributive(np.all, axis)
+
+    def any(self, axis=None):
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.any, axis)
+        return self._calc_func_axis_distributive(np.any, axis)
 
     # TODO: more calculation methods here
+    # Not distributive: ptp, cumsum, var, std, cumprod
+    # Don't take an axis: clip, conj, round
+    # Other: trace (two axes!)
+
+    def _calc_func_axis_rowwise(self, func, axis):
+        # Calculation method that takes an axis argument and axis == 1
+        return NotImplemented
+
+    def _calc_func_axis_distributive(self, func, axis):
+        # Calculation method that takes an axis argument, and is distributive.
+        # Distributive in this context means that the result can be computed in pieces
+        # and combined using the function. So f(a, b, c, d) = f(f(a, b), f(c, d))
+        return NotImplemented
 
     # Distributed ufunc internal implementation
 

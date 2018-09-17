@@ -92,35 +92,38 @@ class ndarray_pcollection(ndarray_dist):
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
-    def sum(a, axis=None):
-        if axis == 0:  # sum of each column
+    def _calc_func_axis_rowwise(self, func, axis):
+        new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
+            lambda pair: (pair[0], func(pair[1], axis=axis))
+        )
+        return self._new(
+            pcollection=new_pcollection,
+            shape=(self.shape[0],),
+            chunks=(self.chunks[0],),
+        )
+
+    def _calc_func_axis_distributive(self, func, axis):
+        if axis == 0:  # column-wise
             # note that unlike in the Spark implementation, nothing is materialized here - the whole computation is deferred
             # this should make things faster
             new_pcollection = (
-                a.pcollection
-                | gensym("sum")
-                >> beam.Map(lambda pair: np.sum(pair[1], axis=0))  # drop indexes
-                | gensym("sum_combine")
-                >> beam.CombineGlobally(lambda values: np.sum(values, axis=0))
+                self.pcollection
+                | gensym(func.__name__)
+                >> beam.Map(lambda pair: func(pair[1], axis=0))  # drop indexes
+                | gensym(func.__name__ + "_combine")
+                >> beam.CombineGlobally(lambda values: func(values, axis=0))
                 | gensym("add_index") >> beam.Map(lambda elt: (0, elt))
             )  # only one row
-            new_shape = (a.shape[1],)
-            return a._new(
+            new_shape = (self.shape[1],)
+            return self._new(
                 pcollection=new_pcollection,
                 shape=new_shape,
                 chunks=new_shape,
                 partition_row_counts=new_shape,
             )
-        elif axis == 1:  # sum of each row
-            new_pcollection = a.pcollection | gensym("sum") >> beam.Map(
-                lambda pair: (pair[0], np.sum(pair[1], axis=1))
-            )
-            return a._new(
-                pcollection=new_pcollection, shape=(a.shape[0],), chunks=(a.chunks[0],)
-            )
         return NotImplemented
 
-    def mean(a, axis=None):
+    def mean(self, axis=None):
         class CountAndSumsFn(beam.DoFn):
             def process(self, element):
                 (idx, row) = element
@@ -155,20 +158,20 @@ class ndarray_pcollection(ndarray_dist):
             # note that unlike in the Spark implementation, nothing is materialized here - the whole computation is deferred
             # this should make things faster
             new_pcollection = (
-                a.pcollection
+                self.pcollection
                 | gensym("count_and_sum") >> beam.ParDo(CountAndSumsFn())
-                | gensym("mean_cols") >> beam.CombineGlobally(MeanColsFn(a.shape[1]))
+                | gensym("mean_cols") >> beam.CombineGlobally(MeanColsFn(self.shape[1]))
             )
-            new_shape = (a.shape[1],)
-            return a._new(
+            new_shape = (self.shape[1],)
+            return self._new(
                 pcollection=new_pcollection,
                 shape=new_shape,
                 chunks=new_shape,
                 partition_row_counts=new_shape,
             )
+        elif axis == 1:
+            return self._calc_func_axis_rowwise(np.mean, axis)
         return NotImplemented
-
-    # TODO: more calculation methods here
 
     # TODO: for Beam we should be able to avoid materializing everything - defer all the computations (even shapes, row partitions, etc)!
 

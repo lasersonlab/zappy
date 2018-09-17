@@ -114,25 +114,29 @@ class ndarray_rdd(ndarray_dist):
                 chunks=mean.shape,
                 partition_row_counts=mean.shape,
             )
+        elif axis == 1:
+            return self._calc_func_axis_rowwise(np.mean, axis)
         return NotImplemented
 
-    def sum(self, axis=None):
-        if axis == 0:  # sum of each column
-            result = self.rdd.map(lambda x: np.sum(x, axis=0)).collect()
-            s = np.sum(result, axis=0)
-            rdd = self.rdd.ctx.parallelize([s])
+    def _calc_func_axis_rowwise(self, func, axis):
+        return self._new(
+            rdd=self.rdd.map(lambda x: func(x, axis=axis)),
+            shape=(self.shape[0],),
+            chunks=(self.chunks[0],),
+        )
+
+    def _calc_func_axis_distributive(self, func, axis):
+        if axis == 0:  # column-wise
+            per_chunk_result = self.rdd.map(lambda x: func(x, axis=0)).collect()
+            result = func(per_chunk_result, axis=0)
+            rdd = self.rdd.ctx.parallelize([result])
             return self._new(
-                rdd=rdd, shape=s.shape, chunks=s.shape, partition_row_counts=s.shape
-            )
-        elif axis == 1:  # sum of each row
-            return self._new(
-                rdd=self.rdd.map(lambda x: np.sum(x, axis=1)),
-                shape=(self.shape[0],),
-                chunks=(self.chunks[0],),
+                rdd=rdd,
+                shape=result.shape,
+                chunks=result.shape,
+                partition_row_counts=result.shape,
             )
         return NotImplemented
-
-    # TODO: more calculation methods here
 
     # Distributed ufunc internal implementation
 
