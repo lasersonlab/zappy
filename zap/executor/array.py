@@ -4,7 +4,11 @@ import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
 from zap.executor.dag import DAG
-from zap.zarr_util import calculate_partition_boundaries, extract_partial_chunks
+from zap.zarr_util import (
+    calculate_partition_boundaries,
+    extract_partial_chunks,
+    get_chunk_sizes,
+)
 
 
 def from_ndarray(executor, arr, chunks):
@@ -13,6 +17,14 @@ def from_ndarray(executor, arr, chunks):
 
 def from_zarr(executor, zarr_file):
     return ndarray_executor.from_zarr(executor, zarr_file)
+
+
+def zeros(executor, shape, chunks, dtype=float):
+    return ndarray_executor.zeros(executor, shape, chunks, dtype)
+
+
+def ones(executor, shape, chunks, dtype=float):
+    return ndarray_executor.ones(executor, shape, chunks, dtype)
 
 
 class ndarray_executor(ndarray_dist):
@@ -44,6 +56,20 @@ class ndarray_executor(ndarray_dist):
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(executor, arr, arr.chunks)
+
+    @classmethod
+    def zeros(cls, executor, shape, chunks, dtype=float):
+        dag = DAG(executor)
+        input = dag.add_input(list(get_chunk_sizes(shape, chunks)))
+        input = dag.transform(lambda chunk: np.zeros(chunk, dtype=dtype), [input])
+        return cls(executor, dag, input, shape, chunks, dtype)
+
+    @classmethod
+    def ones(cls, executor, shape, chunks, dtype=float):
+        dag = DAG(executor)
+        input = dag.add_input(list(get_chunk_sizes(shape, chunks)))
+        input = dag.transform(lambda chunk: np.ones(chunk, dtype=dtype), [input])
+        return cls(executor, dag, input, shape, chunks, dtype)
 
     def _compute(self):
         return list(self.dag.compute(self.input))

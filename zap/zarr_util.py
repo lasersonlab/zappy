@@ -1,3 +1,4 @@
+import itertools
 import math
 import zarr
 
@@ -44,6 +45,16 @@ def get_chunk_indices(shape, chunks):
         for i in range(int(math.ceil(float(shape[0]) / chunks[0])))
         for j in range(int(math.ceil(float(shape[1]) / chunks[1])))
     ]
+
+
+def get_chunk_sizes(shape, chunks):
+    def sizes(length, chunk_length):
+        res = [chunk_length] * (length // chunk_length)
+        if length % chunk_length != 0:
+            res.append(length % chunk_length)
+        return res
+
+    return itertools.product(sizes(shape[0], chunks[0]), sizes(shape[1], chunks[1]))
 
 
 def read_zarr_chunk(arr, chunks, chunk_index):

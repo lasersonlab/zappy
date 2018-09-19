@@ -3,6 +3,7 @@ import numpy as np
 import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
+from zap.zarr_util import get_chunk_sizes
 
 
 def from_ndarray(arr, chunks):
@@ -11,6 +12,14 @@ def from_ndarray(arr, chunks):
 
 def from_zarr(zarr_file):
     return ndarray_dist_direct.from_zarr(zarr_file)
+
+
+def zeros(shape, chunks, dtype=float):
+    return ndarray_dist_direct.zeros(shape, chunks, dtype)
+
+
+def ones(shape, chunks, dtype=float):
+    return ndarray_dist_direct.ones(shape, chunks, dtype)
 
 
 class ndarray_dist_direct(ndarray_dist):
@@ -34,6 +43,20 @@ class ndarray_dist_direct(ndarray_dist):
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(arr, arr.chunks)
+
+    @classmethod
+    def zeros(cls, shape, chunks, dtype=float):
+        local_rows = [
+            np.zeros(chunk, dtype=dtype) for chunk in get_chunk_sizes(shape, chunks)
+        ]
+        return cls(local_rows, shape, chunks, dtype)
+
+    @classmethod
+    def ones(cls, shape, chunks, dtype=float):
+        local_rows = [
+            np.ones(chunk, dtype=dtype) for chunk in get_chunk_sizes(shape, chunks)
+        ]
+        return cls(local_rows, shape, chunks, dtype)
 
     def _compute(self):
         return self.local_rows

@@ -3,7 +3,11 @@ import numpy as np
 import zarr
 
 from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.zarr_util import calculate_partition_boundaries, extract_partial_chunks
+from zap.zarr_util import (
+    calculate_partition_boundaries,
+    extract_partial_chunks,
+    get_chunk_sizes,
+)
 
 
 def from_ndarray(sc, arr, chunks):
@@ -12,6 +16,14 @@ def from_ndarray(sc, arr, chunks):
 
 def from_zarr(sc, zarr_file):
     return ndarray_rdd.from_zarr(sc, zarr_file)
+
+
+def zeros(sc, shape, chunks, dtype=float):
+    return ndarray_rdd.zeros(sc, shape, chunks, dtype)
+
+
+def ones(sc, shape, chunks, dtype=float):
+    return ndarray_rdd.ones(sc, shape, chunks, dtype)
 
 
 # ndarray in Spark
@@ -39,6 +51,22 @@ class ndarray_rdd(ndarray_dist):
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(sc, arr, arr.chunks)
+
+    @classmethod
+    def zeros(cls, sc, shape, chunks, dtype=float):
+        chunk_sizes = list(get_chunk_sizes(shape, chunks))
+        rdd = sc.parallelize(chunk_sizes, len(chunk_sizes)).map(
+            lambda chunk: np.zeros(chunk, dtype=dtype)
+        )
+        return cls(sc, rdd, shape, chunks, dtype)
+
+    @classmethod
+    def ones(cls, sc, shape, chunks, dtype=float):
+        chunk_sizes = list(get_chunk_sizes(shape, chunks))
+        rdd = sc.parallelize(chunk_sizes, len(chunk_sizes)).map(
+            lambda chunk: np.ones(chunk, dtype=dtype)
+        )
+        return cls(sc, rdd, shape, chunks, dtype)
 
     def _compute(self):
         return self.rdd.collect()

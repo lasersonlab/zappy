@@ -12,6 +12,8 @@ from numpy.testing import assert_allclose
 from pyspark.sql import SparkSession
 
 TESTS = [0, 1, 2, 3, 6, 7]
+ZEROS_TESTS = [0, 1, 2]
+ONES_TESTS = ZEROS_TESTS
 
 # only run Beam tests on Python 2, and don't run executor tests
 if sys.version_info[0] == 2:
@@ -90,6 +92,32 @@ class TestZapArray:
             # in-memory ndarray executor
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
+
+    @pytest.fixture(params=ZEROS_TESTS)
+    def zeros(self, sc, request):
+        if request.param == 0:
+            yield zap.direct.array.zeros((3, 5), chunks=(2, 5), dtype=int)
+        elif request.param == 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.zeros(
+                    executor, (3, 5), chunks=(2, 5), dtype=int
+                )
+        elif request.param == 2:
+            yield zap.spark.array.zeros(sc, (3, 5), chunks=(2, 5), dtype=int)
+        # TODO beam
+
+    @pytest.fixture(params=ONES_TESTS)
+    def ones(self, sc, request):
+        if request.param == 0:
+            yield zap.direct.array.ones((3, 5), chunks=(2, 5), dtype=int)
+        elif request.param == 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.ones(
+                    executor, (3, 5), chunks=(2, 5), dtype=int
+                )
+        elif request.param == 2:
+            yield zap.spark.array.ones(sc, (3, 5), chunks=(2, 5), dtype=int)
+        # TODO beam
 
     def test_identity(self, x, xd):
         assert_allclose(xd.asndarray(), x)
@@ -216,3 +244,13 @@ class TestZapArray:
         )
         arr = z[:]
         assert_allclose(arr, x)
+
+    def test_zeros(self, zeros):
+        totals = np.sum(zeros, axis=0)
+        x = np.array([0, 0, 0, 0, 0])
+        assert_allclose(totals.asndarray(), x)
+
+    def test_ones(self, ones):
+        totals = np.sum(ones, axis=0)
+        x = np.array([3, 3, 3, 3, 3])
+        assert_allclose(totals.asndarray(), x)
