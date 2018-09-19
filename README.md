@@ -1,6 +1,6 @@
 # Zap - distributed processing with Numpy and Zarr
 
-Zap is for distributed processing of chunked Numpy arrays on engines like Apache Spark and Apache Beam.
+Zap is for distributed processing of chunked NumPy arrays on engines like Apache Spark and Apache Beam.
 
 [![Build Status](https://travis-ci.org/lasersonlab/zap.svg?branch=master)](https://travis-ci.org/lasersonlab/zap)
 
@@ -21,9 +21,7 @@ Hopefully the executor engine will make it possible to run on [Pywren] at some p
 Full coverage of the `numpy.ndarray` interface is _not_ provided. Only enough has been implemented to support running
 parts of [Scanpy], as demonstrated in the [Single Cell Experiments] repo.
 
-## Testing
-
-There is a test suite for all the engines, covering both Python 2 and 3.
+## Demo
 
 Create and activate a Python 3 virtualenv, and install the requirements:
 
@@ -32,24 +30,14 @@ python3 -m venv venv
 . venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
+pip install s3fs jupyter
 ```
 
-Or for Python 2:
+## Testing
 
-```
-virtualenv venv2
-. venv2/bin/activate
-pip install -r requirements.txt
-pip install -e .
-```
+There is a test suite for all the engines, covering both Python 2 and 3.
 
-Run Tests:
-
-```
-pytest
-```
-
-Or run everything in one go with tox:
+Run everything in one go with tox:
 
 ```
 pip install tox

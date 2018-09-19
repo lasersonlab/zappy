@@ -27,6 +27,25 @@ def ones(executor, shape, chunks, dtype=float):
     return ndarray_executor.ones(executor, shape, chunks, dtype)
 
 
+"""Small wrapper to make a Pywren executor behave like a concurrent.futures.Executor."""
+
+
+class PywrenExecutor(object):
+    def __init__(self, pywren_executor=None):
+        import pywren
+
+        self.pywren_executor = (
+            pywren_executor
+            if pywren_executor is not None
+            else pywren.default_executor()
+        )
+
+    def map(self, func, iterables):
+        import pywren
+
+        return pywren.get_all_results(self.pywren_executor.map(func, iterables))
+
+
 class ndarray_executor(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 
