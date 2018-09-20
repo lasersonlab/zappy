@@ -11,10 +11,15 @@ import zarr
 from numpy.testing import assert_allclose
 from pyspark.sql import SparkSession
 
-# add/change to '8' to run the tests using Pywren (requires Pywren to be installed)
-TESTS = [0, 1, 2, 3, 6, 7]
-ZEROS_TESTS = [0, 1, 2]
-ONES_TESTS = ZEROS_TESTS
+# add/change to "pywren_ndarray" to run the tests using Pywren (requires Pywren to be installed)
+TESTS = [
+    "direct_ndarray",
+    "direct_zarr",
+    "executor_ndarray",
+    "executor_zarr",
+    "spark_ndarray",
+    "spark_zarr",
+]
 
 # only run Beam tests on Python 2, and don't run executor tests
 if sys.version_info[0] == 2:
@@ -22,7 +27,14 @@ if sys.version_info[0] == 2:
     from apache_beam.options.pipeline_options import PipelineOptions
     import zap.beam.array
 
-    TESTS = [0, 1, 2, 3, 4, 5]
+    TESTS = [
+        "direct_ndarray",
+        "direct_zarr",
+        "spark_ndarray",
+        "spark_zarr",
+        "beam_ndarray",
+        "beam_zarr",
+    ]
 
 
 class TestZapArray:
@@ -63,81 +75,68 @@ class TestZapArray:
 
     @pytest.fixture(params=TESTS)
     def xd(self, sc, x, xz, chunks, request):
-        if request.param == 0:
-            # zarr direct
-            yield zap.direct.array.from_zarr(xz)
-        elif request.param == 1:
-            # in-memory ndarray direct
+        if request.param == "direct_ndarray":
             yield zap.direct.array.from_ndarray(x.copy(), chunks)
-        elif request.param == 2:
-            # zarr spark
-            yield zap.spark.array.from_zarr(sc, xz)
-        elif request.param == 3:
-            # in-memory ndarray spark
+        elif request.param == "direct_zarr":
+            yield zap.direct.array.from_zarr(xz)
+        elif request.param == "executor_ndarray":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
+        elif request.param == "executor_zarr":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.from_zarr(executor, xz)
+        elif request.param == "spark_ndarray":
             yield zap.spark.array.from_ndarray(sc, x.copy(), chunks)
-        elif request.param == 4:
-            # zarr beam
-            pipeline_options = PipelineOptions()
-            pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.array.from_zarr(pipeline, xz)
-        elif request.param == 5:
-            # in-memory ndarray beam
+        elif request.param == "spark_zarr":
+            yield zap.spark.array.from_zarr(sc, xz)
+        elif request.param == "beam_ndarray":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
             yield zap.beam.array.from_ndarray(pipeline, x.copy(), chunks)
-        elif request.param == 6:
-            # zarr executor
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_zarr(executor, xz)
-        elif request.param == 7:
-            # in-memory ndarray executor
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
-        elif request.param == 8:
-            # in-memory ndarray pywren executor
+        elif request.param == "beam_zarr":
+            pipeline_options = PipelineOptions()
+            pipeline = beam.Pipeline(options=pipeline_options)
+            yield zap.beam.array.from_zarr(pipeline, xz)
+        elif request.param == "pywren_ndarray":
             executor = zap.executor.array.PywrenExecutor()
             yield zap.executor.array.from_ndarray(executor, x.copy(), chunks)
 
     @pytest.fixture(params=TESTS)
     def xd_and_temp_store(self, sc, x, xz, chunks, request):
-        if request.param == 0:
-            # zarr direct
-            yield zap.direct.array.from_zarr(xz), zarr.TempStore()
-        elif request.param == 1:
-            # in-memory ndarray direct
+        if request.param == "direct_ndarray":
             yield zap.direct.array.from_ndarray(x.copy(), chunks), zarr.TempStore()
-        elif request.param == 2:
-            # zarr spark
-            yield zap.spark.array.from_zarr(sc, xz), zarr.TempStore()
-        elif request.param == 3:
-            # in-memory ndarray spark
+        elif request.param == "direct_zarr":
+            yield zap.direct.array.from_zarr(xz), zarr.TempStore()
+        elif request.param == "executor_ndarray":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.from_ndarray(
+                    executor, x.copy(), chunks
+                ), zarr.TempStore()
+        elif request.param == "executor_zarr":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                yield zap.executor.array.from_zarr(executor, xz), zarr.TempStore()
+        elif request.param == "spark_ndarray":
             yield zap.spark.array.from_ndarray(sc, x.copy(), chunks), zarr.TempStore()
-        elif request.param == 4:
-            # zarr beam
+        elif request.param == "spark_zarr":
+            yield zap.spark.array.from_zarr(sc, xz), zarr.TempStore()
+        elif request.param == "beam_ndarray":
+            pipeline_options = PipelineOptions()
+            pipeline = beam.Pipeline(options=pipeline_options)
+            yield zap.beam.array.from_ndarray(
+                pipeline, x.copy(), chunks
+            ), zarr.TempStore()
+        elif request.param == "beam_zarr":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
             yield zap.beam.array.from_zarr(pipeline, xz), zarr.TempStore()
-        elif request.param == 5:
-            # in-memory ndarray beam
-            pipeline_options = PipelineOptions()
-            pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.array.from_ndarray(pipeline, x.copy(), chunks), zarr.TempStore()
-        elif request.param == 6:
-            # zarr executor
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_zarr(executor, xz), zarr.TempStore()
-        elif request.param == 7:
-            # in-memory ndarray executor
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_ndarray(executor, x.copy(), chunks), zarr.TempStore()
-        elif request.param == 8:
-            # in-memory ndarray pywren executor
+        elif request.param == "pywren_ndarray":
             import s3fs.mapping
 
             def create_unique_bucket_name(prefix):
                 import uuid
 
                 return "%s-%s" % (prefix, str(uuid.uuid4()).replace("-", ""))
+
             s3 = s3fs.S3FileSystem()
             bucket = create_unique_bucket_name("zap-test")
             s3.mkdir(bucket)
@@ -147,31 +146,29 @@ class TestZapArray:
             yield zap.executor.array.from_ndarray(executor, x.copy(), chunks), s3store
             s3.rm(bucket, recursive=True)
 
-    @pytest.fixture(params=ZEROS_TESTS)
+    @pytest.fixture(params=["direct", "executor", "spark"])  # TODO: beam
     def zeros(self, sc, request):
-        if request.param == 0:
+        if request.param == "direct":
             yield zap.direct.array.zeros((3, 5), chunks=(2, 5), dtype=int)
-        elif request.param == 1:
+        elif request.param == "executor":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 yield zap.executor.array.zeros(
                     executor, (3, 5), chunks=(2, 5), dtype=int
                 )
-        elif request.param == 2:
+        elif request.param == "spark":
             yield zap.spark.array.zeros(sc, (3, 5), chunks=(2, 5), dtype=int)
-        # TODO beam
 
-    @pytest.fixture(params=ONES_TESTS)
+    @pytest.fixture(params=["direct", "executor", "spark"])  # TODO: beam
     def ones(self, sc, request):
-        if request.param == 0:
+        if request.param == "direct":
             yield zap.direct.array.ones((3, 5), chunks=(2, 5), dtype=int)
-        elif request.param == 1:
+        elif request.param == "executor":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 yield zap.executor.array.ones(
                     executor, (3, 5), chunks=(2, 5), dtype=int
                 )
-        elif request.param == 2:
+        elif request.param == "spark":
             yield zap.spark.array.ones(sc, (3, 5), chunks=(2, 5), dtype=int)
-        # TODO beam
 
     def test_identity(self, x, xd):
         assert_allclose(xd.asndarray(), x)
@@ -293,9 +290,7 @@ class TestZapArray:
         xd, temp_store = xd_and_temp_store
         xd.to_zarr(temp_store, xd.chunks)
         # read back as zarr directly and check it is the same as x
-        z = zarr.open(
-            temp_store, mode="r", shape=x.shape, dtype=x.dtype, chunks=(2, 5)
-        )
+        z = zarr.open(temp_store, mode="r", shape=x.shape, dtype=x.dtype, chunks=(2, 5))
         arr = z[:]
         assert_allclose(arr, x)
 
