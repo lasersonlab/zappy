@@ -1,4 +1,6 @@
 import builtins
+import uuid
+
 import numpy as np
 import zarr
 
@@ -11,20 +13,20 @@ from zap.zarr_util import (
 )
 
 
-def from_ndarray(executor, arr, chunks):
-    return ndarray_executor.from_ndarray(executor, arr, chunks)
+def from_ndarray(executor, arr, chunks, intermediate_store=None):
+    return ndarray_executor.from_ndarray(executor, arr, chunks, intermediate_store)
 
 
-def from_zarr(executor, zarr_file):
-    return ndarray_executor.from_zarr(executor, zarr_file)
+def from_zarr(executor, zarr_file, intermediate_store=None):
+    return ndarray_executor.from_zarr(executor, zarr_file, intermediate_store)
 
 
-def zeros(executor, shape, chunks, dtype=float):
-    return ndarray_executor.zeros(executor, shape, chunks, dtype)
+def zeros(executor, shape, chunks, dtype=float, intermediate_store=None):
+    return ndarray_executor.zeros(executor, shape, chunks, dtype, intermediate_store)
 
 
-def ones(executor, shape, chunks, dtype=float):
-    return ndarray_executor.ones(executor, shape, chunks, dtype)
+def ones(executor, shape, chunks, dtype=float, intermediate_store=None):
+    return ndarray_executor.ones(executor, shape, chunks, dtype, intermediate_store)
 
 
 """Small wrapper to make a Pywren executor behave like a concurrent.futures.Executor."""
@@ -50,45 +52,80 @@ class ndarray_executor(ndarray_dist):
     """A numpy.ndarray backed by chunked storage"""
 
     def __init__(
-        self, executor, dag, input, shape, chunks, dtype, partition_row_counts=None
+        self,
+        executor,
+        dag,
+        input,
+        shape,
+        chunks,
+        dtype,
+        partition_row_counts=None,
+        intermediate_store=None,
     ):
         ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.executor = executor
         self.dag = dag
         self.input = input
+        if intermediate_store == None:
+            intermediate_store = zarr.group()
+        self.intermediate_store = intermediate_store
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
-    def from_ndarray(cls, executor, arr, chunks):
+    def from_ndarray(cls, executor, arr, chunks, intermediate_store=None):
         func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
         dag = DAG(executor)
         # the input is just the chunk indices
         input = dag.add_input(chunk_indices)
         # add a transform to read chunks
         input = dag.transform(func, [input])
-        return cls(executor, dag, input, arr.shape, chunks, arr.dtype)
+        return cls(
+            executor,
+            dag,
+            input,
+            arr.shape,
+            chunks,
+            arr.dtype,
+            intermediate_store=intermediate_store,
+        )
 
     @classmethod
-    def from_zarr(cls, executor, zarr_file):
+    def from_zarr(cls, executor, zarr_file, intermediate_store=None):
         """
         Read a Zarr file as an ndarray_executor object.
         """
         arr = zarr.open(zarr_file, mode="r")
-        return cls.from_ndarray(executor, arr, arr.chunks)
+        return cls.from_ndarray(executor, arr, arr.chunks, intermediate_store)
 
     @classmethod
-    def zeros(cls, executor, shape, chunks, dtype=float):
+    def zeros(cls, executor, shape, chunks, dtype=float, intermediate_store=None):
         dag = DAG(executor)
         input = dag.add_input(list(get_chunk_sizes(shape, chunks)))
         input = dag.transform(lambda chunk: np.zeros(chunk, dtype=dtype), [input])
-        return cls(executor, dag, input, shape, chunks, dtype)
+        return cls(
+            executor,
+            dag,
+            input,
+            shape,
+            chunks,
+            dtype,
+            intermediate_store=intermediate_store,
+        )
 
     @classmethod
-    def ones(cls, executor, shape, chunks, dtype=float):
+    def ones(cls, executor, shape, chunks, dtype=float, intermediate_store=None):
         dag = DAG(executor)
         input = dag.add_input(list(get_chunk_sizes(shape, chunks)))
         input = dag.transform(lambda chunk: np.ones(chunk, dtype=dtype), [input])
-        return cls(executor, dag, input, shape, chunks, dtype)
+        return cls(
+            executor,
+            dag,
+            input,
+            shape,
+            chunks,
+            dtype,
+            intermediate_store=intermediate_store,
+        )
 
     def _compute(self):
         return list(self.dag.compute(self.input))
@@ -99,8 +136,9 @@ class ndarray_executor(ndarray_dist):
             chunks, self.partition_row_counts
         )
 
+        # make a new zarr group in the intermediate store with a unique name
+        root = self.intermediate_store.create_group(str(uuid.uuid4()))
         # make a zarr group for each partition
-        root = zarr.group()  # TODO: use a store
         for index in range(new_num_partitions):
             root.create_group(str(index))
 
