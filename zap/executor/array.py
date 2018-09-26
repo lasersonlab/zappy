@@ -1,4 +1,7 @@
 import builtins
+import datetime
+import os
+import pickle
 import uuid
 
 import numpy as np
@@ -29,11 +32,10 @@ def ones(executor, shape, chunks, dtype=float, intermediate_store=None):
     return ndarray_executor.ones(executor, shape, chunks, dtype, intermediate_store)
 
 
-"""Small wrapper to make a Pywren executor behave like a concurrent.futures.Executor."""
-
-
 class PywrenExecutor(object):
-    def __init__(self, pywren_executor=None):
+    """Small wrapper to make a Pywren executor behave like a concurrent.futures.Executor."""
+
+    def __init__(self, pywren_executor=None, record_job_history=True):
         import pywren
 
         self.pywren_executor = (
@@ -41,11 +43,29 @@ class PywrenExecutor(object):
             if pywren_executor is not None
             else pywren.default_executor()
         )
+        self.record_job_history = record_job_history
 
     def map(self, func, iterables):
         import pywren
 
-        return pywren.get_all_results(self.pywren_executor.map(func, iterables))
+        futures = self.pywren_executor.map(func, iterables)
+        pywren.wait(futures, return_when=pywren.ALL_COMPLETED)
+        results = [f.result() for f in futures]
+        if self.record_job_history:
+            run_statuses = [f.run_status for f in futures]
+            invoke_statuses = [f.invoke_status for f in futures]
+            outdict = {
+                "futures": futures,
+                "run_statuses": run_statuses,
+                "invoke_statuses": invoke_statuses,
+            }
+            logs_dir = os.path.expanduser("~/.zap/logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S.%f")
+            filename = os.path.join(logs_dir, "pywren-{}.pickle".format(timestamp))
+            with open(filename, "wb") as file:
+                pickle.dump(outdict, file)
+        return results
 
 
 class ndarray_executor(ndarray_dist):
