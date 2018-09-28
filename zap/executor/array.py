@@ -35,7 +35,9 @@ def ones(executor, shape, chunks, dtype=float, intermediate_store=None):
 class PywrenExecutor(object):
     """Small wrapper to make a Pywren executor behave like a concurrent.futures.Executor."""
 
-    def __init__(self, pywren_executor=None, record_job_history=True):
+    def __init__(
+        self, pywren_executor=None, exclude_modules=None, record_job_history=True
+    ):
         import pywren
 
         self.pywren_executor = (
@@ -43,12 +45,15 @@ class PywrenExecutor(object):
             if pywren_executor is not None
             else pywren.default_executor()
         )
+        self.exclude_modules = exclude_modules
         self.record_job_history = record_job_history
 
     def map(self, func, iterables):
         import pywren
 
-        futures = self.pywren_executor.map(func, iterables)
+        futures = self.pywren_executor.map(
+            func, iterables, exclude_modules=self.exclude_modules
+        )
         pywren.wait(futures, return_when=pywren.ALL_COMPLETED)
         results = [f.result() for f in futures]
         if self.record_job_history:
