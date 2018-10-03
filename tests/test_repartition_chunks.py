@@ -2,9 +2,9 @@ import concurrent.futures
 import logging
 import pytest
 import zap.base as np  # zap includes everything in numpy, with some overrides and new functions
-import zap.executor.array
-import zap.direct.array
-import zap.spark.array
+import zap.executor
+import zap.direct
+import zap.spark
 
 from pyspark.sql import SparkSession
 
@@ -31,32 +31,32 @@ class TestZapArray:
     @pytest.fixture(params=TESTS)
     def xd(self, sc, x, request):
         if request.param == 0:
-            yield zap.direct.array.from_ndarray(x.copy(), (5, 1))
+            yield zap.direct.from_ndarray(x.copy(), (5, 1))
         elif request.param == 1:
-            yield zap.spark.array.from_ndarray(sc, x.copy(), (5, 1))
+            yield zap.spark.from_ndarray(sc, x.copy(), (5, 1))
         elif request.param == 2:
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_ndarray(executor, x.copy(), (5, 1))
+                yield zap.executor.from_ndarray(executor, x.copy(), (5, 1))
 
     @pytest.fixture(params=TESTS)
     def xd34(self, sc, x, request):
         if request.param == 0:
-            yield zap.direct.array.from_ndarray(x.copy(), (3, 4))
+            yield zap.direct.from_ndarray(x.copy(), (3, 4))
         elif request.param == 1:
-            yield zap.spark.array.from_ndarray(sc, x.copy(), (3, 4))
+            yield zap.spark.from_ndarray(sc, x.copy(), (3, 4))
         elif request.param == 2:
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_ndarray(executor, x.copy(), (3, 4))
+                yield zap.executor.from_ndarray(executor, x.copy(), (3, 4))
 
     @pytest.fixture(params=TESTS)
     def xd43(self, sc, x, request):
         if request.param == 0:
-            yield zap.direct.array.from_ndarray(x.copy(), (4, 3))
+            yield zap.direct.from_ndarray(x.copy(), (4, 3))
         elif request.param == 1:
-            yield zap.spark.array.from_ndarray(sc, x.copy(), (4, 3))
+            yield zap.spark.from_ndarray(sc, x.copy(), (4, 3))
         elif request.param == 2:
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.array.from_ndarray(executor, x.copy(), (4, 3))
+                yield zap.executor.from_ndarray(executor, x.copy(), (4, 3))
 
     def check(self, expected_rows, actual_rows):
         assert len(actual_rows) == len(expected_rows)
