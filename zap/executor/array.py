@@ -17,19 +17,19 @@ from zap.zarr_util import (
 
 
 def from_ndarray(executor, arr, chunks, intermediate_store=None):
-    return ndarray_executor.from_ndarray(executor, arr, chunks, intermediate_store)
+    return ExecutorZapArray.from_ndarray(executor, arr, chunks, intermediate_store)
 
 
 def from_zarr(executor, zarr_file, intermediate_store=None):
-    return ndarray_executor.from_zarr(executor, zarr_file, intermediate_store)
+    return ExecutorZapArray.from_zarr(executor, zarr_file, intermediate_store)
 
 
 def zeros(executor, shape, chunks, dtype=float, intermediate_store=None):
-    return ndarray_executor.zeros(executor, shape, chunks, dtype, intermediate_store)
+    return ExecutorZapArray.zeros(executor, shape, chunks, dtype, intermediate_store)
 
 
 def ones(executor, shape, chunks, dtype=float, intermediate_store=None):
-    return ndarray_executor.ones(executor, shape, chunks, dtype, intermediate_store)
+    return ExecutorZapArray.ones(executor, shape, chunks, dtype, intermediate_store)
 
 
 class PywrenExecutor(object):
@@ -75,7 +75,7 @@ class PywrenExecutor(object):
         return results
 
 
-class ndarray_executor(ndarray_dist):
+class ExecutorZapArray(ZapArray):
     """A numpy.ndarray backed by chunked storage"""
 
     def __init__(
@@ -89,7 +89,7 @@ class ndarray_executor(ndarray_dist):
         partition_row_counts=None,
         intermediate_store=None,
     ):
-        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
+        ZapArray.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.executor = executor
         self.dag = dag
         self.input = input
@@ -100,7 +100,7 @@ class ndarray_executor(ndarray_dist):
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, executor, arr, chunks, intermediate_store=None):
-        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
+        func, chunk_indices = ZapArray._read_chunks(arr, chunks)
         dag = DAG(executor)
         # the input is just the chunk indices
         input = dag.add_input(chunk_indices)
@@ -119,7 +119,7 @@ class ndarray_executor(ndarray_dist):
     @classmethod
     def from_zarr(cls, executor, zarr_file, intermediate_store=None):
         """
-        Read a Zarr file as an ndarray_executor object.
+        Read a Zarr file as an ExecutorZapArray object.
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(executor, arr, arr.chunks, intermediate_store)
@@ -204,7 +204,7 @@ class ndarray_executor(ndarray_dist):
         input = dag.transform(tmp_load, [input])
 
         # TODO: delete intermediate store when dag is computed
-        return ndarray_executor(
+        return ExecutorZapArray(
             self.executor, dag, input, self.shape, chunks, self.dtype
         )
 

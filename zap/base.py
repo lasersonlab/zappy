@@ -19,16 +19,16 @@ npd = sys.modules[__name__]
 
 
 def asarray(a):
-    if isinstance(a, ndarray_dist):
+    if isinstance(a, ZapArray):
         return a.asndarray()
     return np.asarray(a)
 
 
 def _delegate_to_np(func):
-    """Delegate to numpy if the first arg is not an ndarray_dist"""
+    """Delegate to numpy if the first arg is not a ZapArray"""
 
     def delegated_func(*args, **kwargs):
-        if len(args) > 0 and isinstance(args[0], ndarray_dist):
+        if len(args) > 0 and isinstance(args[0], ZapArray):
             return func(*args, **kwargs)
         # delegate to the equivalent in numpy
         return getattr(np, func.__name__)(*args, **kwargs)
@@ -37,10 +37,10 @@ def _delegate_to_np(func):
 
 
 def _delegate_to_np_dist(func):
-    """Delegate to numpy if the first arg is not an ndarray_dist"""
+    """Delegate to numpy if the first arg is not a ZapArray"""
 
     def delegated_func(*args, **kwargs):
-        if len(args) > 0 and isinstance(args[0], ndarray_dist):
+        if len(args) > 0 and isinstance(args[0], ZapArray):
             return args[0]._dist_ufunc(func, args[1:], **kwargs)
         # delegate to the equivalent in numpy
         return getattr(np, func.__name__)(*args, **kwargs)
@@ -195,7 +195,7 @@ def median(a):
     return np.median(a.asndarray())
 
 
-class ndarray_dist:
+class ZapArray:
     def __init__(self, shape, chunks, dtype, partition_row_counts=None):
         self.shape = shape
         self.chunks = chunks
@@ -271,14 +271,14 @@ class ndarray_dist:
 
     def to_zarr(self, zarr_file, chunks):
         """
-        Write an ndarray_dist object to a Zarr file.
+        Write an ZapArray object to a Zarr file.
         """
         repartitioned = self._repartition_if_necessary(chunks)
         repartitioned._write_zarr(zarr_file, chunks, write_chunk(zarr_file))
 
     def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
         """
-        Write an ndarray_dist object to a Zarr file on GCS.
+        Write an ZapArray object to a Zarr file on GCS.
         """
         repartitioned = self._repartition_if_necessary(chunks)
         import gcsfs.mapping
@@ -397,7 +397,7 @@ class ndarray_dist:
             return self._integer_index(item)
         elif isinstance(item, np.ndarray) and item.dtype == bool:
             return self._boolean_array_index(item)
-        elif isinstance(item, ndarray_dist) and item.dtype == bool:
+        elif isinstance(item, ZapArray) and item.dtype == bool:
             return self._boolean_array_index_dist(item)
         elif isinstance(item[0], slice) and item[0] == all_indices:
             return self._column_subset(item)

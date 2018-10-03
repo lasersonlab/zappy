@@ -191,7 +191,7 @@ class TestZapArray:
 
     def test_broadcast_col(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
-            xd, zap.beam.array.ndarray_pcollection
+            xd, zap.beam.array.BeamZapArray
         ):  # TODO: fix this
             return
         a = np.array([[1.0], [2.0], [3.0]])

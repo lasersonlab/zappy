@@ -11,43 +11,43 @@ from zap.zarr_util import (
 
 
 def from_ndarray(sc, arr, chunks):
-    return ndarray_rdd.from_ndarray(sc, arr, chunks)
+    return SparkZapArray.from_ndarray(sc, arr, chunks)
 
 
 def from_zarr(sc, zarr_file):
-    return ndarray_rdd.from_zarr(sc, zarr_file)
+    return SparkZapArray.from_zarr(sc, zarr_file)
 
 
 def zeros(sc, shape, chunks, dtype=float):
-    return ndarray_rdd.zeros(sc, shape, chunks, dtype)
+    return SparkZapArray.zeros(sc, shape, chunks, dtype)
 
 
 def ones(sc, shape, chunks, dtype=float):
-    return ndarray_rdd.ones(sc, shape, chunks, dtype)
+    return SparkZapArray.ones(sc, shape, chunks, dtype)
 
 
 # ndarray in Spark
 
 
-class ndarray_rdd(ndarray_dist):
+class SparkZapArray(ZapArray):
     """A numpy.ndarray backed by a Spark RDD"""
 
     def __init__(self, sc, rdd, shape, chunks, dtype, partition_row_counts=None):
-        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
+        ZapArray.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.sc = sc
         self.rdd = rdd
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, sc, arr, chunks):
-        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
+        func, chunk_indices = ZapArray._read_chunks(arr, chunks)
         rdd = sc.parallelize(chunk_indices, len(chunk_indices)).map(func)
         return cls(sc, rdd, arr.shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, sc, zarr_file):
         """
-        Read a Zarr file as an ndarray_rdd object.
+        Read a Zarr file as a SparkZapArray object.
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(sc, arr, arr.chunks)

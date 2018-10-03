@@ -8,11 +8,11 @@ from zap.base import *  # include everything in zap.base and hence base numpy
 
 
 def from_ndarray(pipeline, arr, chunks):
-    return ndarray_pcollection.from_ndarray(pipeline, arr, chunks)
+    return BeamZapArray.from_ndarray(pipeline, arr, chunks)
 
 
 def from_zarr(pipeline, zarr_file):
-    return ndarray_pcollection.from_zarr(pipeline, zarr_file)
+    return BeamZapArray.from_zarr(pipeline, zarr_file)
 
 
 sym_counter = 0
@@ -27,20 +27,20 @@ def gensym(name):
 # ndarray in Beam
 
 
-class ndarray_pcollection(ndarray_dist):
+class BeamZapArray(ZapArray):
     """A numpy.ndarray backed by a Beam PCollection"""
 
     def __init__(
         self, pipeline, pcollection, shape, chunks, dtype, partition_row_counts=None
     ):
-        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
+        ZapArray.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.pipeline = pipeline
         self.pcollection = pcollection
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, pipeline, arr, chunks):
-        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
+        func, chunk_indices = ZapArray._read_chunks(arr, chunks)
         # use the first component of chunk index as an index (assumes rows are one chunk wide)
         pcollection = (
             pipeline
@@ -52,7 +52,7 @@ class ndarray_pcollection(ndarray_dist):
     @classmethod
     def from_zarr(cls, pipeline, zarr_file):
         """
-        Read a Zarr file as an ndarray_pcollection object.
+        Read a Zarr file as a BeamZapArray object.
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(pipeline, arr, arr.chunks)

@@ -7,39 +7,39 @@ from zap.zarr_util import get_chunk_sizes
 
 
 def from_ndarray(arr, chunks):
-    return ndarray_dist_direct.from_ndarray(arr, chunks)
+    return DirectZapArray.from_ndarray(arr, chunks)
 
 
 def from_zarr(zarr_file):
-    return ndarray_dist_direct.from_zarr(zarr_file)
+    return DirectZapArray.from_zarr(zarr_file)
 
 
 def zeros(shape, chunks, dtype=float):
-    return ndarray_dist_direct.zeros(shape, chunks, dtype)
+    return DirectZapArray.zeros(shape, chunks, dtype)
 
 
 def ones(shape, chunks, dtype=float):
-    return ndarray_dist_direct.ones(shape, chunks, dtype)
+    return DirectZapArray.ones(shape, chunks, dtype)
 
 
-class ndarray_dist_direct(ndarray_dist):
+class DirectZapArray(ZapArray):
     """A numpy.ndarray backed by chunked storage"""
 
     def __init__(self, local_rows, shape, chunks, dtype, partition_row_counts=None):
-        ndarray_dist.__init__(self, shape, chunks, dtype, partition_row_counts)
+        ZapArray.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.local_rows = local_rows
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, arr, chunks):
-        func, chunk_indices = ndarray_dist._read_chunks(arr, chunks)
+        func, chunk_indices = ZapArray._read_chunks(arr, chunks)
         local_rows = [func(i) for i in chunk_indices]
         return cls(local_rows, arr.shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, zarr_file):
         """
-        Read a Zarr file as an ndarray_dist_direct object.
+        Read a Zarr file as a DirectZapArray object.
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(arr, arr.chunks)
