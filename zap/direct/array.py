@@ -68,7 +68,7 @@ class DirectZapArray(ZapArray):
         if remaining != 0:
             partition_row_counts.append(remaining)
         return self._new(
-            local_rows=self._copartition(arr, partition_row_counts),
+            local_rows=self._copartition_values(arr, partition_row_counts),
             chunks=chunks,
             partition_row_counts=partition_row_counts,
         )
@@ -105,9 +105,11 @@ class DirectZapArray(ZapArray):
         )
 
     def _calc_func_axis_distributive(self, func, axis):
-        if axis == 0:  # column-wise
-            per_chunk_result = [func(x, axis=0) for x in self.local_rows]
-            result = func(per_chunk_result, axis=0)
+        per_chunk_result = [func(x, axis=axis) for x in self.local_rows]
+        result = func(per_chunk_result, axis=axis)
+        if axis is None:
+            return result
+        elif axis == 0:  # column-wise
             local_rows = [result]
             return self._new(
                 local_rows=local_rows,
@@ -119,35 +121,35 @@ class DirectZapArray(ZapArray):
 
     # Distributed ufunc internal implementation
 
-    def _unary_ufunc(self, func, dtype=None, copy=True):
+    def _unary_ufunc(self, func, out=None, dtype=None):
         new_local_rows = [func(x) for x in self.local_rows]
-        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, out=out, dtype=dtype)
 
-    def _binary_ufunc_self(self, func, dtype=None, copy=True):
+    def _binary_ufunc_self(self, func, out=None, dtype=None):
         new_local_rows = [func(x, x) for x in self.local_rows]
-        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, out=out, dtype=dtype)
 
     def _binary_ufunc_broadcast_single_row_or_value(
-        self, func, other, dtype=None, copy=True
+        self, func, other, out=None, dtype=None
     ):
         other = asarray(other)  # materialize
         new_local_rows = [func(x, other) for x in self.local_rows]
-        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, out=out, dtype=dtype)
 
-    def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         other = asarray(other)  # materialize
         partition_row_subsets = self._copartition(other, self.partition_row_counts)
         new_local_rows = [
             func(p[0], p[1]) for p in zip(self.local_rows, partition_row_subsets)
         ]
-        return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
+        return self._new(local_rows=new_local_rows, out=out, dtype=dtype)
 
-    def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_same_shape(self, func, other, out=None, dtype=None):
         if self.partition_row_counts == other.partition_row_counts:
             new_local_rows = [
                 func(p[0], p[1]) for p in zip(self.local_rows, other.local_rows)
             ]
-            return self._new(local_rows=new_local_rows, dtype=dtype, copy=copy)
+            return self._new(local_rows=new_local_rows, out=out, dtype=dtype)
         return NotImplemented
 
     # Slicing
@@ -176,8 +178,8 @@ class DirectZapArray(ZapArray):
                 shape=new_shape,
                 chunks=new_chunks,
             )
-        subset = asarray(item[1])  # materialize
-        new_num_cols = builtins.sum(subset)
+        subset = self._materialize_index(item[1])
+        new_num_cols = self._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(

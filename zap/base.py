@@ -199,7 +199,7 @@ class ZapArray:
     def __init__(self, shape, chunks, dtype, partition_row_counts=None):
         self.shape = shape
         self.chunks = chunks
-        self.dtype = dtype
+        self.dtype = dtype if isinstance(dtype, np.dtype) else np.dtype(dtype)
         if partition_row_counts is None:
             partition_row_counts = [chunks[0]] * (shape[0] // chunks[0])
             remaining = shape[0] % chunks[0]
@@ -209,9 +209,10 @@ class ZapArray:
 
     def _new(self, **kwargs):
         """Copy or update this object with the given keyword parameters."""
-        obj = cp.copy(self) if kwargs.get("copy", True) else self
+        out = kwargs.get("out")
+        obj = out if out else cp.copy(self)
         for key, value in kwargs.items():
-            if key != "copy":
+            if key != "out":
                 setattr(obj, key, value)
         return obj
 
@@ -292,6 +293,16 @@ class ZapArray:
     def _write_zarr(self, store, chunks, write_chunk_fn):
         return NotImplemented
 
+    # Array conversion (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#array-methods)
+
+    def astype(self, dtype, copy=True):
+        out = None if copy else self
+        dtype = dtype if isinstance(dtype, np.dtype) else np.dtype(dtype)
+        return self._unary_ufunc(lambda x: x.astype(dtype), out=out, dtype=dtype)
+
+    def copy(self):
+        return self._new()
+
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
     def mean(self, axis=None):
@@ -349,44 +360,44 @@ class ZapArray:
 
     # Distributed ufunc internal implementation
 
-    def _dist_ufunc(self, func, args, dtype=None, copy=True):
+    def _dist_ufunc(self, func, args, out=None, dtype=None):
         # unary ufunc
         if len(args) == 0:
-            return self._unary_ufunc(func, dtype, copy)
+            return self._unary_ufunc(func, out=out, dtype=dtype)
         # binary ufunc
         elif len(args) == 1:
             other = args[0]
             if self is other:
-                return self._binary_ufunc_self(func, dtype, copy)
+                return self._binary_ufunc_self(func, out=out, dtype=dtype)
             elif isinstance(other, numbers.Number) or other.ndim == 1:
                 return self._binary_ufunc_broadcast_single_row_or_value(
-                    func, other, dtype, copy
+                    func, other, out=out, dtype=dtype
                 )
             elif self.shape[0] == other.shape[0] and other.shape[1] == 1:
                 return self._binary_ufunc_broadcast_single_column(
-                    func, other, dtype, copy
+                    func, other, out=out, dtype=dtype
                 )
             elif self.shape == other.shape:
-                return self._binary_ufunc_same_shape(func, other, dtype, copy)
+                return self._binary_ufunc_same_shape(func, other, out=out, dtype=dtype)
         else:
             print("_dist_ufunc %s not implemented for %s" % (func, args))
             return NotImplemented
 
-    def _unary_ufunc(self, func, dtype=None, copy=True):
+    def _unary_ufunc(self, func, out=None, dtype=None):
         return NotImplemented
 
-    def _binary_ufunc_self(self, func, dtype=None, copy=True):
+    def _binary_ufunc_self(self, func, out=None, dtype=None):
         return NotImplemented
 
     def _binary_ufunc_broadcast_single_row_or_value(
-        self, func, other, dtype=None, copy=True
+        self, func, other, out=None, dtype=None
     ):
         return NotImplemented
 
-    def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         return NotImplemented
 
-    def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_same_shape(self, func, other, out=None, dtype=None):
         return NotImplemented
 
     # Slicing implementation
@@ -423,15 +434,48 @@ class ZapArray:
         return NotImplemented
 
     # Utility methods
+    # TODO: document
 
     def _copartition(self, arr, partition_row_counts):
+        if arr.dtype == np.dtype(int): # indexes
+            cum = np.cumsum(partition_row_counts)[0:-1]
+            index_breaks = np.searchsorted(arr, cum)
+            splits = np.array(np.split(arr, index_breaks))
+            if len(splits[-1]) == 0:
+                splits = np.array(splits[0:-1])
+            offsets = np.insert(cum, 0, 0) # add a leading 0
+            partition_row_subsets = splits - offsets
+            return partition_row_subsets
+        else: # values
+            return self._copartition_values(arr, partition_row_counts)
+
+    def _copartition_values(self, arr, partition_row_counts):
         partition_row_subsets = np.split(arr, np.cumsum(partition_row_counts)[0:-1])
         if len(partition_row_subsets[-1]) == 0:
             partition_row_subsets = partition_row_subsets[0:-1]
         return partition_row_subsets
 
     def _partition_row_counts(self, partition_row_subsets):
-        return [int(builtins.sum(s)) for s in partition_row_subsets]
+        dtype = partition_row_subsets[0].dtype
+        if dtype == np.dtype(bool):
+            return [int(builtins.sum(s)) for s in partition_row_subsets]
+        elif dtype == np.dtype(int):
+            return [len(s) for s in partition_row_subsets]
+        return NotImplemented
+
+    def _materialize_index(self, index):
+        if isinstance(index, slice):
+            return index
+        return asarray(index)
+
+    def _compute_dim(self, dim, subset):
+        all_indices = slice(None, None, None)
+        if isinstance(subset, slice):
+            if subset == all_indices:
+                return dim
+            else:
+                return len(np.zeros((dim))[subset])
+        return builtins.sum(subset)
 
     # Arithmetic, matrix multiplication, and comparison operations (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#arithmetic-matrix-multiplication-and-comparison-operations)
 
@@ -523,43 +567,43 @@ class ZapArray:
     # Arithmetic, in-place
 
     def __iadd__(self, other):
-        return npd.add(self, other, copy=False)
+        return npd.add(self, other, out=self)
 
     def __isub__(self, other):
-        return npd.subtract(self, other, copy=False)
+        return npd.subtract(self, other, out=self)
 
     def __imul__(self, other):
-        return npd.multiply(self, other, copy=False)
+        return npd.multiply(self, other, out=self)
 
     def __idiv__(self, other):
-        return npd.multiply(self, other, copy=False)
+        return npd.multiply(self, other, out=self)
 
     def __itruediv__(self, other):
-        return npd.true_divide(self, other, copy=False)
+        return npd.true_divide(self, other, out=self)
 
     def __ifloordiv__(self, other):
-        return npd.floor_divide(self, other, copy=False)
+        return npd.floor_divide(self, other, out=self)
 
     def __imod__(self, other):
-        return npd.mod(self, other, copy=False)
+        return npd.mod(self, other, out=self)
 
     def __ipow__(self, other):
-        return npd.power(self, other, copy=False)
+        return npd.power(self, other, out=self)
 
     def __ilshift__(self, other):
-        return npd.lshift(self, other, copy=False)
+        return npd.lshift(self, other, out=self)
 
     def __irshift__(self, other):
-        return npd.rshift(self, other, copy=False)
+        return npd.rshift(self, other, out=self)
 
     def __iand__(self, other):
-        return npd.bitwise_and(self, other, copy=False)
+        return npd.bitwise_and(self, other, out=self)
 
     def __ior__(self, other):
-        return npd.bitwise_or(self, other, copy=False)
+        return npd.bitwise_or(self, other, out=self)
 
     def __ixor__(self, other):
-        return npd.bitwise_xor(self, other, copy=False)
+        return npd.bitwise_xor(self, other, out=self)
 
     # Matrix Multiplication
 

@@ -177,33 +177,33 @@ class BeamZapArray(ZapArray):
 
     # Distributed ufunc internal implementation
 
-    def _unary_ufunc(self, func, dtype=None, copy=True):
+    def _unary_ufunc(self, func, out=None, dtype=None):
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1]))
         )
-        return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
+        return self._new(pcollection=new_pcollection, out=out, dtype=dtype)
 
-    def _binary_ufunc_self(self, func, dtype=None, copy=True):
+    def _binary_ufunc_self(self, func, out=None, dtype=None):
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1], pair[1]))
         )
-        return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
+        return self._new(pcollection=new_pcollection, out=out, dtype=dtype)
 
     def _binary_ufunc_broadcast_single_row_or_value(
-        self, func, other, dtype=None, copy=True
+        self, func, other, out=None, dtype=None
     ):
         other = asarray(other)  # materialize
         # TODO: should send 'other' as a Beam side input
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1], other))
         )
-        return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
+        return self._new(pcollection=new_pcollection, out=out, dtype=dtype)
 
-    def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         # TODO: Beam (side input)
         return NotImplemented
 
-    def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_same_shape(self, func, other, out=None, dtype=None):
         if self.partition_row_counts == other.partition_row_counts:
             # args have the same rows (and partitioning) so use zip to combine then apply the operator
             # Beam doesn't have a direct equivalent of Spark's zip function, so we use CoGroupByKey (is this less efficient?)
@@ -216,7 +216,7 @@ class BeamZapArray(ZapArray):
                 | beam.CoGroupByKey()
                 | gensym(func.__name__) >> beam.Map(combine_indexed_dict)
             )
-            return self._new(pcollection=new_pcollection, dtype=dtype, copy=copy)
+            return self._new(pcollection=new_pcollection, out=out, dtype=dtype)
         return NotImplemented
 
     # Slicing
@@ -258,11 +258,11 @@ class BeamZapArray(ZapArray):
             return self._new(
                 pcollection=new_pcollection, shape=new_shape, chunks=new_chunks
             )
-        subset = asarray(item[1])  # materialize
         new_pcollection = self.pcollection | gensym("column_subset") >> beam.Map(
             lambda pair: (pair[0], pair[1][item])
         )
-        new_num_cols = builtins.sum(subset)
+        subset = self._materialize_index(item[1])
+        new_num_cols = self._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(

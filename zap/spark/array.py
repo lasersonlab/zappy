@@ -154,9 +154,11 @@ class SparkZapArray(ZapArray):
         )
 
     def _calc_func_axis_distributive(self, func, axis):
-        if axis == 0:  # column-wise
-            per_chunk_result = self.rdd.map(lambda x: func(x, axis=0)).collect()
-            result = func(per_chunk_result, axis=0)
+        per_chunk_result = self.rdd.map(lambda x: func(x, axis=axis)).collect()
+        result = func(per_chunk_result, axis=axis)
+        if axis is None:
+            return result
+        elif axis == 0:  # column-wise
             rdd = self.rdd.ctx.parallelize([result])
             return self._new(
                 rdd=rdd,
@@ -168,35 +170,35 @@ class SparkZapArray(ZapArray):
 
     # Distributed ufunc internal implementation
 
-    def _unary_ufunc(self, func, dtype=None, copy=True):
+    def _unary_ufunc(self, func, out=None, dtype=None):
         new_rdd = self.rdd.map(lambda x: func(x))
-        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, out=out, dtype=dtype)
 
-    def _binary_ufunc_self(self, func, dtype=None, copy=True):
+    def _binary_ufunc_self(self, func, out=None, dtype=None):
         new_rdd = self.rdd.map(lambda x: func(x, x))
-        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, out=out, dtype=dtype)
 
     def _binary_ufunc_broadcast_single_row_or_value(
-        self, func, other, dtype=None, copy=True
+        self, func, other, out=None, dtype=None
     ):
         other = asarray(other)  # materialize
         # TODO: should send 'other' as a Spark broadcast
         new_rdd = self.rdd.map(lambda x: func(x, other))
-        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, out=out, dtype=dtype)
 
-    def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         other = asarray(other)  # materialize
         partition_row_subsets = self._copartition(other, self.partition_row_counts)
         repartitioned_other_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)
         )
         new_rdd = self.rdd.zip(repartitioned_other_rdd).map(lambda p: func(p[0], p[1]))
-        return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
+        return self._new(rdd=new_rdd, out=out, dtype=dtype)
 
-    def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_same_shape(self, func, other, out=None, dtype=None):
         if self.partition_row_counts == other.partition_row_counts:
             new_rdd = self.rdd.zip(other.rdd).map(lambda p: func(p[0], p[1]))
-            return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
+            return self._new(rdd=new_rdd, out=out, dtype=dtype)
         elif other.shape[1] == 1:
             partition_row_subsets = self._copartition(
                 other.asndarray(), self.partition_row_counts
@@ -207,7 +209,7 @@ class SparkZapArray(ZapArray):
             new_rdd = self.rdd.zip(repartitioned_other_rdd).map(
                 lambda p: func(p[0], p[1])
             )
-            return self._new(rdd=new_rdd, dtype=dtype, copy=copy)
+            return self._new(rdd=new_rdd, out=out, dtype=dtype)
         return NotImplemented
 
     # Slicing
@@ -236,8 +238,8 @@ class SparkZapArray(ZapArray):
                 shape=new_shape,
                 chunks=new_chunks,
             )
-        subset = asarray(item[1])  # materialize
-        new_num_cols = builtins.sum(subset)
+        subset = self._materialize_index(item[1])
+        new_num_cols = self._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(

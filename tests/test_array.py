@@ -173,6 +173,20 @@ class TestZapArray:
     def test_identity(self, x, xd):
         assert_allclose(xd.asndarray(), x)
 
+    def test_astype(self, x, xd):
+        xd = xd.astype(int)
+        x = x.astype(int)
+        assert xd.dtype == x.dtype
+        assert_allclose(xd.asndarray(), x)
+
+    def test_astype_inplace(self, x, xd):
+        original_id = id(xd)
+        xd = xd.astype(int, copy=False)
+        assert original_id == id(xd)
+        x = x.astype(int, copy=False)
+        assert xd.dtype == x.dtype
+        assert_allclose(xd.asndarray(), x)
+
     def test_scalar_arithmetic(self, x, xd):
         xd = (((xd + 1) * 2) - 4) / 1.1
         x = (((x + 1) * 2) - 4) / 1.1
@@ -216,7 +230,9 @@ class TestZapArray:
         assert_allclose(xd.asndarray(), x)
 
     def test_inplace(self, x, xd):
+        original_id = id(xd)
         xd += 1
+        assert original_id == id(xd)
         x += 1
         assert_allclose(xd.asndarray(), x)
 
@@ -232,15 +248,36 @@ class TestZapArray:
         x = x[x > 5]
         assert_allclose(xd.asndarray(), x)
 
-    def test_subset_cols(self, x, xd):
+    def test_slice_cols(self, x, xd):
+        xd = xd[:, 1:3]
+        x = x[:, 1:3]
+        assert xd.shape == x.shape
+        assert_allclose(xd.asndarray(), x)
+
+    # TODO: implement row slicing
+    # def test_slice_rows(self, x, xd):
+    #     xd = xd[1:3, :]
+    #     x = x[1:3, :]
+    #     assert xd.shape == x.shape
+    #     assert_allclose(xd.asndarray(), x)
+
+    def test_subset_cols_boolean(self, x, xd):
         subset = np.array([True, False, True, False, True])
         xd = xd[:, subset]
         x = x[:, subset]
         assert xd.shape == x.shape
         assert_allclose(xd.asndarray(), x)
 
-    def test_subset_rows(self, x, xd):
+    def test_subset_rows_boolean(self, x, xd):
         subset = np.array([True, False, True])
+        xd = xd[subset, :]
+        x = x[subset, :]
+        assert xd.shape == x.shape
+        assert_allclose(xd.asndarray(), x)
+
+    def test_subset_rows_int(self, x, xd):
+        # TODO: this fails if changed to `subset = np.array([1, 2])`
+        subset = np.array([0, 1, 2])
         xd = xd[subset, :]
         x = x[subset, :]
         assert xd.shape == x.shape
@@ -255,6 +292,15 @@ class TestZapArray:
         log1pnps = np.log1p(xd).asndarray()
         log1pnp = np.log1p(x)
         assert_allclose(log1pnps, log1pnp)
+
+    def test_sum(self, x, xd):
+        if sys.version_info[0] == 2 and isinstance(
+                xd, zap.beam.array.BeamZapArray
+        ):  # TODO: fix this
+            return
+        totald = np.sum(xd)
+        total = np.sum(x)
+        assert totald == pytest.approx(total)
 
     def test_sum_cols(self, x, xd):
         xd = np.sum(xd, axis=0)

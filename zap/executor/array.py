@@ -243,9 +243,11 @@ class ExecutorZapArray(ZapArray):
         return self._new(input=input, shape=(self.shape[0],), chunks=(self.chunks[0],))
 
     def _calc_func_axis_distributive(self, func, axis):
-        if axis == 0:  # column-wise
-            per_chunk_result = [func(x, axis=0) for x in self._compute()]
-            result = func(per_chunk_result, axis=0)
+        per_chunk_result = [func(x, axis=axis) for x in self._compute()]
+        result = func(per_chunk_result, axis=axis)
+        if axis is None:
+            return result
+        elif axis == 0:  # column-wise
             # new dag
             dag = DAG(self.executor)
             partitioned_input = [result]
@@ -261,32 +263,32 @@ class ExecutorZapArray(ZapArray):
 
     # Distributed ufunc internal implementation
 
-    def _unary_ufunc(self, func, dtype=None, copy=True):
+    def _unary_ufunc(self, func, out=None, dtype=None):
         input = self.dag.transform(func, [self.input])
-        return self._new(input=input, dtype=dtype, copy=copy)
+        return self._new(input=input, out=out, dtype=dtype)
 
-    def _binary_ufunc_self(self, func, dtype=None, copy=True):
+    def _binary_ufunc_self(self, func, out=None, dtype=None):
         input = self.dag.transform(lambda x: func(x, x), [self.input])
-        return self._new(input=input, dtype=dtype, copy=copy)
+        return self._new(input=input, out=out, dtype=dtype)
 
     def _binary_ufunc_broadcast_single_row_or_value(
-        self, func, other, dtype=None, copy=True
+        self, func, other, out=None, dtype=None
     ):
         other = asarray(other)  # materialize
         input = self.dag.transform(lambda x: func(x, other), [self.input])
-        return self._new(input=input, dtype=dtype, copy=copy)
+        return self._new(input=input, out=out, dtype=dtype)
 
-    def _binary_ufunc_broadcast_single_column(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         other = asarray(other)  # materialize
         partition_row_subsets = self._copartition(other, self.partition_row_counts)
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(func, [self.input, side_input])
-        return self._new(input=input, dtype=dtype, copy=copy)
+        return self._new(input=input, out=out, dtype=dtype)
 
-    def _binary_ufunc_same_shape(self, func, other, dtype=None, copy=True):
+    def _binary_ufunc_same_shape(self, func, other, out=None, dtype=None):
         if self.partition_row_counts == other.partition_row_counts:
             input = self.dag.transform(func, [self.input, other.input])
-            return self._new(input=input, dtype=dtype, copy=copy)
+            return self._new(input=input, out=out, dtype=dtype)
         return NotImplemented
 
     # Slicing
@@ -310,8 +312,8 @@ class ExecutorZapArray(ZapArray):
             new_chunks = (self.chunks[0], new_num_cols)
             input = self.dag.transform(lambda x: x[:, np.newaxis], [self.input])
             return self._new(input=input, shape=new_shape, chunks=new_chunks)
-        subset = asarray(item[1])  # materialize
-        new_num_cols = builtins.sum(subset)
+        subset = self._materialize_index(item[1])
+        new_num_cols = self._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         input = self.dag.transform(lambda x: x[item], [self.input])
