@@ -122,9 +122,7 @@ class TestZapArray:
         elif request.param == "beam_ndarray":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.from_ndarray(
-                pipeline, x.copy(), chunks
-            ), zarr.TempStore()
+            yield zap.beam.from_ndarray(pipeline, x.copy(), chunks), zarr.TempStore()
         elif request.param == "beam_zarr":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
@@ -152,9 +150,7 @@ class TestZapArray:
             yield zap.direct.zeros((3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "executor":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.zeros(
-                    executor, (3, 5), chunks=(2, 5), dtype=int
-                )
+                yield zap.executor.zeros(executor, (3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "spark":
             yield zap.spark.zeros(sc, (3, 5), chunks=(2, 5), dtype=int)
 
@@ -164,9 +160,7 @@ class TestZapArray:
             yield zap.direct.ones((3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "executor":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.ones(
-                    executor, (3, 5), chunks=(2, 5), dtype=int
-                )
+                yield zap.executor.ones(executor, (3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "spark":
             yield zap.spark.ones(sc, (3, 5), chunks=(2, 5), dtype=int)
 
@@ -275,6 +269,13 @@ class TestZapArray:
         assert xd.shape == x.shape
         assert_allclose(xd.asndarray(), x)
 
+    def test_subset_cols_int(self, x, xd):
+        subset = np.array([1, 3])
+        xd = xd[:, subset]
+        x = x[:, subset]
+        assert xd.shape == x.shape
+        assert_allclose(xd.asndarray(), x)
+
     def test_subset_rows_int(self, x, xd):
         # TODO: this fails if changed to `subset = np.array([1, 2])`
         subset = np.array([0, 1, 2])
@@ -295,7 +296,7 @@ class TestZapArray:
 
     def test_sum(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
-                xd, zap.beam.array.BeamZapArray
+            xd, zap.beam.array.BeamZapArray
         ):  # TODO: fix this
             return
         totald = np.sum(xd)
@@ -311,6 +312,15 @@ class TestZapArray:
         xd = np.sum(xd, axis=1)
         x = np.sum(x, axis=1)
         assert_allclose(xd.asndarray(), x)
+
+    def test_mean(self, x, xd):
+        if sys.version_info[0] == 2 and isinstance(
+            xd, zap.beam.array.BeamZapArray
+        ):  # TODO: fix this
+            return
+        meand = np.mean(xd)
+        mean = np.mean(x)
+        assert meand == pytest.approx(mean)
 
     def test_mean_cols(self, x, xd):
         xd = np.mean(xd, axis=0)

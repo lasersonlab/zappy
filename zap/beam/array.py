@@ -123,7 +123,7 @@ class BeamZapArray(ZapArray):
             )
         return NotImplemented
 
-    def mean(self, axis=None):
+    def _calc_mean(self, axis=None):
         class CountAndSumsFn(beam.DoFn):
             def process(self, element):
                 (idx, row) = element
@@ -169,8 +169,6 @@ class BeamZapArray(ZapArray):
                 chunks=new_shape,
                 partition_row_counts=new_shape,
             )
-        elif axis == 1:
-            return self._calc_func_axis_rowwise(np.mean, axis)
         return NotImplemented
 
     # TODO: for Beam we should be able to avoid materializing everything - defer all the computations (even shapes, row partitions, etc)!

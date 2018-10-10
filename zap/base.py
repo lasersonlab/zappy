@@ -306,7 +306,9 @@ class ZapArray:
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
     def mean(self, axis=None):
-        return NotImplemented
+        if axis == 1:
+            return self._calc_func_axis_rowwise(np.mean, axis)
+        return self._calc_mean(axis)
 
     def argmax(self, axis=None):
         if axis == 1:
@@ -347,6 +349,9 @@ class ZapArray:
     # Not distributive: ptp, cumsum, var, std, cumprod
     # Don't take an axis: clip, conj, round
     # Other: trace (two axes!)
+
+    def _calc_mean(self, axis=None):
+        return NotImplemented
 
     def _calc_func_axis_rowwise(self, func, axis):
         # Calculation method that takes an axis argument and axis == 1
@@ -406,9 +411,7 @@ class ZapArray:
         all_indices = slice(None, None, None)
         if isinstance(item, numbers.Number):
             return self._integer_index(item)
-        elif isinstance(item, np.ndarray) and item.dtype == bool:
-            return self._boolean_array_index(item)
-        elif isinstance(item, ZapArray) and item.dtype == bool:
+        elif isinstance(item, (np.ndarray, ZapArray)) and item.dtype == bool:
             return self._boolean_array_index_dist(item)
         elif isinstance(item[0], slice) and item[0] == all_indices:
             return self._column_subset(item)
@@ -417,10 +420,6 @@ class ZapArray:
         return NotImplemented
 
     def _integer_index(self, item):
-        # TODO: not scalable for large arrays
-        return self.asndarray().__getitem__(item)
-
-    def _boolean_array_index(self, item):
         # TODO: not scalable for large arrays
         return self.asndarray().__getitem__(item)
 
@@ -437,16 +436,16 @@ class ZapArray:
     # TODO: document
 
     def _copartition(self, arr, partition_row_counts):
-        if arr.dtype == np.dtype(int): # indexes
+        if arr.dtype == np.dtype(int):  # indexes
             cum = np.cumsum(partition_row_counts)[0:-1]
             index_breaks = np.searchsorted(arr, cum)
             splits = np.array(np.split(arr, index_breaks))
             if len(splits[-1]) == 0:
                 splits = np.array(splits[0:-1])
-            offsets = np.insert(cum, 0, 0) # add a leading 0
+            offsets = np.insert(cum, 0, 0)  # add a leading 0
             partition_row_subsets = splits - offsets
             return partition_row_subsets
-        else: # values
+        else:  # values
             return self._copartition_values(arr, partition_row_counts)
 
     def _copartition_values(self, arr, partition_row_counts):
@@ -475,6 +474,8 @@ class ZapArray:
                 return dim
             else:
                 return len(np.zeros((dim))[subset])
+        elif subset.dtype == np.dtype(int):
+            return len(subset)
         return builtins.sum(subset)
 
     # Arithmetic, matrix multiplication, and comparison operations (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#arithmetic-matrix-multiplication-and-comparison-operations)

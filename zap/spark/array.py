@@ -130,11 +130,20 @@ class SparkZapArray(ZapArray):
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
-    def mean(self, axis=None):
-        if axis == 0:  # mean of each column
-            result = self.rdd.map(lambda x: (x.shape[0], np.sum(x, axis=0))).collect()
+    def _calc_mean(self, axis=None):
+        if axis is None:
+            result = self.rdd.map(
+                lambda x: (x.shape[0] * x.shape[1], np.sum(x, axis=axis))
+            ).collect()
             total_count = builtins.sum([res[0] for res in result])
-            mean = np.sum([res[1] for res in result], axis=0) / total_count
+            mean = np.sum([res[1] for res in result], axis=axis) / total_count
+            return mean
+        elif axis == 0:  # mean of each column
+            result = self.rdd.map(
+                lambda x: (x.shape[0], np.sum(x, axis=axis))
+            ).collect()
+            total_count = builtins.sum([res[0] for res in result])
+            mean = np.sum([res[1] for res in result], axis=axis) / total_count
             rdd = self.rdd.ctx.parallelize([mean])
             return self._new(
                 rdd=rdd,
@@ -142,8 +151,6 @@ class SparkZapArray(ZapArray):
                 chunks=mean.shape,
                 partition_row_counts=mean.shape,
             )
-        elif axis == 1:
-            return self._calc_func_axis_rowwise(np.mean, axis)
         return NotImplemented
 
     def _calc_func_axis_rowwise(self, func, axis):
