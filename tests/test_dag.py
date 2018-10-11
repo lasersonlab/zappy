@@ -1,6 +1,6 @@
 import concurrent.futures
 import pytest
-from zap.executor.dag import DAG
+from zappy.executor.dag import DAG
 
 
 def add_one(x):

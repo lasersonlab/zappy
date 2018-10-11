@@ -7,9 +7,9 @@ import uuid
 import numpy as np
 import zarr
 
-from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.executor.dag import DAG
-from zap.zarr_util import (
+from zappy.base import *  # include everything in zappy.base and hence base numpy
+from zappy.executor.dag import DAG
+from zappy.zarr_util import (
     calculate_partition_boundaries,
     extract_partial_chunks,
     get_chunk_sizes,
@@ -17,19 +17,19 @@ from zap.zarr_util import (
 
 
 def from_ndarray(executor, arr, chunks, intermediate_store=None):
-    return ExecutorZapArray.from_ndarray(executor, arr, chunks, intermediate_store)
+    return ExecutorZappyArray.from_ndarray(executor, arr, chunks, intermediate_store)
 
 
 def from_zarr(executor, zarr_file, intermediate_store=None):
-    return ExecutorZapArray.from_zarr(executor, zarr_file, intermediate_store)
+    return ExecutorZappyArray.from_zarr(executor, zarr_file, intermediate_store)
 
 
 def zeros(executor, shape, chunks, dtype=float, intermediate_store=None):
-    return ExecutorZapArray.zeros(executor, shape, chunks, dtype, intermediate_store)
+    return ExecutorZappyArray.zeros(executor, shape, chunks, dtype, intermediate_store)
 
 
 def ones(executor, shape, chunks, dtype=float, intermediate_store=None):
-    return ExecutorZapArray.ones(executor, shape, chunks, dtype, intermediate_store)
+    return ExecutorZappyArray.ones(executor, shape, chunks, dtype, intermediate_store)
 
 
 class PywrenExecutor(object):
@@ -66,7 +66,7 @@ class PywrenExecutor(object):
                 "run_statuses": run_statuses,
                 "invoke_statuses": invoke_statuses,
             }
-            logs_dir = os.path.expanduser("~/.zap/logs")
+            logs_dir = os.path.expanduser("~/.zappy/logs")
             os.makedirs(logs_dir, exist_ok=True)
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S.%f")
             filename = os.path.join(logs_dir, "pywren-{}.pickle".format(timestamp))
@@ -75,7 +75,7 @@ class PywrenExecutor(object):
         return results
 
 
-class ExecutorZapArray(ZapArray):
+class ExecutorZappyArray(ZappyArray):
     """A numpy.ndarray backed by chunked storage"""
 
     def __init__(
@@ -89,7 +89,7 @@ class ExecutorZapArray(ZapArray):
         partition_row_counts=None,
         intermediate_store=None,
     ):
-        ZapArray.__init__(self, shape, chunks, dtype, partition_row_counts)
+        ZappyArray.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.executor = executor
         self.dag = dag
         self.input = input
@@ -100,7 +100,7 @@ class ExecutorZapArray(ZapArray):
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, executor, arr, chunks, intermediate_store=None):
-        func, chunk_indices = ZapArray._read_chunks(arr, chunks)
+        func, chunk_indices = ZappyArray._read_chunks(arr, chunks)
         dag = DAG(executor)
         # the input is just the chunk indices
         input = dag.add_input(chunk_indices)
@@ -119,7 +119,7 @@ class ExecutorZapArray(ZapArray):
     @classmethod
     def from_zarr(cls, executor, zarr_file, intermediate_store=None):
         """
-        Read a Zarr file as an ExecutorZapArray object.
+        Read a Zarr file as an ExecutorZappyArray object.
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(executor, arr, arr.chunks, intermediate_store)
@@ -204,7 +204,7 @@ class ExecutorZapArray(ZapArray):
         input = dag.transform(tmp_load, [input])
 
         # TODO: delete intermediate store when dag is computed
-        return ExecutorZapArray(
+        return ExecutorZappyArray(
             self.executor, dag, input, self.shape, chunks, self.dtype
         )
 

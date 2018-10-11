@@ -2,8 +2,8 @@ import builtins
 import numpy as np
 import zarr
 
-from zap.base import *  # include everything in zap.base and hence base numpy
-from zap.zarr_util import (
+from zappy.base import *  # include everything in zappy.base and hence base numpy
+from zappy.zarr_util import (
     calculate_partition_boundaries,
     extract_partial_chunks,
     get_chunk_sizes,
@@ -11,43 +11,43 @@ from zap.zarr_util import (
 
 
 def from_ndarray(sc, arr, chunks):
-    return SparkZapArray.from_ndarray(sc, arr, chunks)
+    return SparkZappyArray.from_ndarray(sc, arr, chunks)
 
 
 def from_zarr(sc, zarr_file):
-    return SparkZapArray.from_zarr(sc, zarr_file)
+    return SparkZappyArray.from_zarr(sc, zarr_file)
 
 
 def zeros(sc, shape, chunks, dtype=float):
-    return SparkZapArray.zeros(sc, shape, chunks, dtype)
+    return SparkZappyArray.zeros(sc, shape, chunks, dtype)
 
 
 def ones(sc, shape, chunks, dtype=float):
-    return SparkZapArray.ones(sc, shape, chunks, dtype)
+    return SparkZappyArray.ones(sc, shape, chunks, dtype)
 
 
 # ndarray in Spark
 
 
-class SparkZapArray(ZapArray):
+class SparkZappyArray(ZappyArray):
     """A numpy.ndarray backed by a Spark RDD"""
 
     def __init__(self, sc, rdd, shape, chunks, dtype, partition_row_counts=None):
-        ZapArray.__init__(self, shape, chunks, dtype, partition_row_counts)
+        ZappyArray.__init__(self, shape, chunks, dtype, partition_row_counts)
         self.sc = sc
         self.rdd = rdd
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
     def from_ndarray(cls, sc, arr, chunks):
-        func, chunk_indices = ZapArray._read_chunks(arr, chunks)
+        func, chunk_indices = ZappyArray._read_chunks(arr, chunks)
         rdd = sc.parallelize(chunk_indices, len(chunk_indices)).map(func)
         return cls(sc, rdd, arr.shape, chunks, arr.dtype)
 
     @classmethod
     def from_zarr(cls, sc, zarr_file):
         """
-        Read a Zarr file as a SparkZapArray object.
+        Read a Zarr file as a SparkZappyArray object.
         """
         arr = zarr.open(zarr_file, mode="r")
         return cls.from_ndarray(sc, arr, arr.chunks)

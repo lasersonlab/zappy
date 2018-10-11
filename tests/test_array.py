@@ -2,10 +2,10 @@ import concurrent.futures
 import logging
 import pytest
 import sys
-import zap.base as np  # zap includes everything in numpy, with some overrides and new functions
-import zap.executor
-import zap.direct
-import zap.spark
+import zappy.base as np  # zappy includes everything in numpy, with some overrides and new functions
+import zappy.executor
+import zappy.direct
+import zappy.spark
 import zarr
 
 from numpy.testing import assert_allclose
@@ -25,7 +25,7 @@ TESTS = [
 if sys.version_info[0] == 2:
     import apache_beam as beam
     from apache_beam.options.pipeline_options import PipelineOptions
-    import zap.beam
+    import zappy.beam
 
     TESTS = [
         "direct_ndarray",
@@ -37,7 +37,7 @@ if sys.version_info[0] == 2:
     ]
 
 
-class TestZapArray:
+class TestZappyArray:
     @pytest.fixture()
     def x(self):
         return np.array(
@@ -76,57 +76,57 @@ class TestZapArray:
     @pytest.fixture(params=TESTS)
     def xd(self, sc, x, xz, chunks, request):
         if request.param == "direct_ndarray":
-            yield zap.direct.from_ndarray(x.copy(), chunks)
+            yield zappy.direct.from_ndarray(x.copy(), chunks)
         elif request.param == "direct_zarr":
-            yield zap.direct.from_zarr(xz)
+            yield zappy.direct.from_zarr(xz)
         elif request.param == "executor_ndarray":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.from_ndarray(executor, x.copy(), chunks)
+                yield zappy.executor.from_ndarray(executor, x.copy(), chunks)
         elif request.param == "executor_zarr":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.from_zarr(executor, xz)
+                yield zappy.executor.from_zarr(executor, xz)
         elif request.param == "spark_ndarray":
-            yield zap.spark.from_ndarray(sc, x.copy(), chunks)
+            yield zappy.spark.from_ndarray(sc, x.copy(), chunks)
         elif request.param == "spark_zarr":
-            yield zap.spark.from_zarr(sc, xz)
+            yield zappy.spark.from_zarr(sc, xz)
         elif request.param == "beam_ndarray":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.from_ndarray(pipeline, x.copy(), chunks)
+            yield zappy.beam.from_ndarray(pipeline, x.copy(), chunks)
         elif request.param == "beam_zarr":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.from_zarr(pipeline, xz)
+            yield zappy.beam.from_zarr(pipeline, xz)
         elif request.param == "pywren_ndarray":
-            executor = zap.executor.PywrenExecutor()
-            yield zap.executor.from_ndarray(executor, x.copy(), chunks)
+            executor = zappy.executor.PywrenExecutor()
+            yield zappy.executor.from_ndarray(executor, x.copy(), chunks)
 
     @pytest.fixture(params=TESTS)
     def xd_and_temp_store(self, sc, x, xz, chunks, request):
         if request.param == "direct_ndarray":
-            yield zap.direct.from_ndarray(x.copy(), chunks), zarr.TempStore()
+            yield zappy.direct.from_ndarray(x.copy(), chunks), zarr.TempStore()
         elif request.param == "direct_zarr":
-            yield zap.direct.from_zarr(xz), zarr.TempStore()
+            yield zappy.direct.from_zarr(xz), zarr.TempStore()
         elif request.param == "executor_ndarray":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.from_ndarray(
+                yield zappy.executor.from_ndarray(
                     executor, x.copy(), chunks
                 ), zarr.TempStore()
         elif request.param == "executor_zarr":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.from_zarr(executor, xz), zarr.TempStore()
+                yield zappy.executor.from_zarr(executor, xz), zarr.TempStore()
         elif request.param == "spark_ndarray":
-            yield zap.spark.from_ndarray(sc, x.copy(), chunks), zarr.TempStore()
+            yield zappy.spark.from_ndarray(sc, x.copy(), chunks), zarr.TempStore()
         elif request.param == "spark_zarr":
-            yield zap.spark.from_zarr(sc, xz), zarr.TempStore()
+            yield zappy.spark.from_zarr(sc, xz), zarr.TempStore()
         elif request.param == "beam_ndarray":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.from_ndarray(pipeline, x.copy(), chunks), zarr.TempStore()
+            yield zappy.beam.from_ndarray(pipeline, x.copy(), chunks), zarr.TempStore()
         elif request.param == "beam_zarr":
             pipeline_options = PipelineOptions()
             pipeline = beam.Pipeline(options=pipeline_options)
-            yield zap.beam.from_zarr(pipeline, xz), zarr.TempStore()
+            yield zappy.beam.from_zarr(pipeline, xz), zarr.TempStore()
         elif request.param == "pywren_ndarray":
             import s3fs.mapping
 
@@ -136,33 +136,33 @@ class TestZapArray:
                 return "%s-%s" % (prefix, str(uuid.uuid4()).replace("-", ""))
 
             s3 = s3fs.S3FileSystem()
-            bucket = create_unique_bucket_name("zap-test")
+            bucket = create_unique_bucket_name("zappy-test")
             s3.mkdir(bucket)
             path = "%s/%s" % (bucket, "test.zarr")
             s3store = s3fs.mapping.S3Map(path, s3=s3)
-            executor = zap.executor.PywrenExecutor()
-            yield zap.executor.from_ndarray(executor, x.copy(), chunks), s3store
+            executor = zappy.executor.PywrenExecutor()
+            yield zappy.executor.from_ndarray(executor, x.copy(), chunks), s3store
             s3.rm(bucket, recursive=True)
 
     @pytest.fixture(params=["direct", "executor", "spark"])  # TODO: beam
     def zeros(self, sc, request):
         if request.param == "direct":
-            yield zap.direct.zeros((3, 5), chunks=(2, 5), dtype=int)
+            yield zappy.direct.zeros((3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "executor":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.zeros(executor, (3, 5), chunks=(2, 5), dtype=int)
+                yield zappy.executor.zeros(executor, (3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "spark":
-            yield zap.spark.zeros(sc, (3, 5), chunks=(2, 5), dtype=int)
+            yield zappy.spark.zeros(sc, (3, 5), chunks=(2, 5), dtype=int)
 
     @pytest.fixture(params=["direct", "executor", "spark"])  # TODO: beam
     def ones(self, sc, request):
         if request.param == "direct":
-            yield zap.direct.ones((3, 5), chunks=(2, 5), dtype=int)
+            yield zappy.direct.ones((3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "executor":
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                yield zap.executor.ones(executor, (3, 5), chunks=(2, 5), dtype=int)
+                yield zappy.executor.ones(executor, (3, 5), chunks=(2, 5), dtype=int)
         elif request.param == "spark":
-            yield zap.spark.ones(sc, (3, 5), chunks=(2, 5), dtype=int)
+            yield zappy.spark.ones(sc, (3, 5), chunks=(2, 5), dtype=int)
 
     def test_identity(self, x, xd):
         assert_allclose(xd.asndarray(), x)
@@ -199,7 +199,7 @@ class TestZapArray:
 
     def test_broadcast_col(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
-            xd, zap.beam.array.BeamZapArray
+            xd, zappy.beam.array.BeamZappyArray
         ):  # TODO: fix this
             return
         a = np.array([[1.0], [2.0], [3.0]])
@@ -296,7 +296,7 @@ class TestZapArray:
 
     def test_sum(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
-            xd, zap.beam.array.BeamZapArray
+            xd, zappy.beam.array.BeamZappyArray
         ):  # TODO: fix this
             return
         totald = np.sum(xd)
@@ -315,7 +315,7 @@ class TestZapArray:
 
     def test_mean(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
-            xd, zap.beam.array.BeamZapArray
+            xd, zappy.beam.array.BeamZappyArray
         ):  # TODO: fix this
             return
         meand = np.mean(xd)

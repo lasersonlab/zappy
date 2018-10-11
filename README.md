@@ -1,11 +1,11 @@
-# Zap - distributed processing with NumPy and Zarr
+# Zappy - distributed processing with NumPy and Zarr
 
-Zap is for distributed processing of chunked NumPy arrays on engines like [Pywren], Apache Spark, and Apache Beam.
+Zappy is for distributed processing of chunked NumPy arrays on engines like [Pywren], Apache Spark, and Apache Beam.
 
-[![Build Status](https://travis-ci.org/lasersonlab/zap.svg?branch=master)](https://travis-ci.org/lasersonlab/zap)
+[![Build Status](https://travis-ci.org/lasersonlab/zappy.svg?branch=master)](https://travis-ci.org/lasersonlab/zappy)
 
-The `zap.base` module defines a `ZapArray` class that exposes the same interface as `numpy.ndarray`, and which
-is backed by distributed storage and processing. The array is broken into chunks, which is typically loaded from Zarr,
+The `zappy.base` module defines a `ZappyArray` class that exposes the same interface as `numpy.ndarray`, and which
+is backed by distributed storage and processing. The array is broken into chunks, and is typically loaded from [Zarr],
 and each chunk is processed independently.
 
 There are a few engines provided:
@@ -18,6 +18,12 @@ Beam currently only runs on Python 2.
 
 Full coverage of the `numpy.ndarray` interface is _not_ provided. Only enough has been implemented to support running
 parts of [Scanpy], as demonstrated in the [Single Cell Experiments] repo.
+
+## Installation
+
+```
+pip install zappy
+```
 
 ## Demo
 
@@ -50,15 +56,34 @@ pip install tox
 tox
 ```
 
+Formatting:
+
+```
+pip install black
+black zappy tests/* *.py
+```
+
 Coverage:
 
 ```
 pip install pytest-cov
-pytest --cov-report html --cov=zap
+pytest --cov-report html --cov=zappy
 open htmlcov/index.html
 ```
+
+## Publishing
+
+```
+pip install twine
+python setup.py sdist
+twine upload -r pypi dist/zappy-0.1.0.tar.gz
+```
+
+If successful, the package will be available on [PyPI].
 
 [Scanpy]: https://scanpy.readthedocs.io/
 [Single Cell Experiments]: https://github.com/lasersonlab/single-cell-experiments
 [concurrent.futures.Executor]: https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor
+[PyPI]: https://pypi.org/project/zappy/
 [Pywren]: http://pywren.io/
+[Zarr]: https://zarr.readthedocs.io/
