@@ -74,8 +74,6 @@ class DirectZappyArray(ZappyArray):
         )
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
-
         for (idx, arr) in enumerate(self.local_rows):
             write_chunk_fn((idx, arr))
 

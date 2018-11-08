@@ -84,7 +84,6 @@ class BeamZappyArray(ZappyArray):
         return local_rows
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
         self.pcollection | gensym("write_zarr") >> beam.Map(write_chunk_fn)
 
         result = self.pipeline.run()

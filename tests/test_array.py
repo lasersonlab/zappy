@@ -350,6 +350,27 @@ class TestZappyArray:
         arr = z[:]
         assert_allclose(arr, x)
 
+    def test_write_zarr_ncopies(self, x, xd_and_temp_store):
+        xd, temp_store = xd_and_temp_store
+        if sys.version_info[0] == 2 and isinstance(
+            xd, zappy.beam.array.BeamZappyArray
+        ):  # TODO: fix this
+            return
+        xd = xd._repartition_chunks((3, 5))
+        ncopies = 3
+        xd.to_zarr(temp_store, xd.chunks, ncopies=ncopies)
+        # read back as zarr directly and check it is the same as x
+        z = zarr.open(
+            temp_store,
+            mode="r",
+            shape=(x.shape[0] * ncopies, x.shape[1]),
+            dtype=x.dtype,
+            chunks=(1, 5),
+        )
+        arr = z[:]
+        x_ncopies = np.vstack((x,) * ncopies)
+        assert_allclose(arr, x_ncopies)
+
     def test_zeros(self, zeros):
         totals = np.sum(zeros, axis=0)
         x = np.array([0, 0, 0, 0, 0])

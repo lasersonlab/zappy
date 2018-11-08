@@ -97,6 +97,25 @@ def write_chunk(file):
     return write_one_chunk
 
 
+def write_n_chunk_copies(file, size, ncopies):
+    """
+    Return a function to write a chunk by index to the given file to produce n copies of the array.
+    """
+
+    def write_n_chunks(index_arr):
+        index, arr = index_arr
+        z = zarr.open(file, mode="r+")
+        chunk_size = z.chunks
+        for i in range(ncopies):
+            effective_index = index + i * (size // chunk_size[0])
+            z[
+                chunk_size[0] * effective_index : chunk_size[0] * (effective_index + 1),
+                :,
+            ] = arr
+
+    return write_n_chunks
+
+
 def write_chunk_gcs(gcs_path, gcs_project, gcs_token):
     """
     Return a function to write a chunk by index to the given file.
@@ -117,6 +136,29 @@ def write_chunk_gcs(gcs_path, gcs_project, gcs_token):
         z[chunk_size[0] * index : chunk_size[0] * (index + 1), :] = arr
 
     return write_one_chunk
+
+
+def write_n_chunk_copies_gcs(gcs_path, gcs_project, gcs_token, size, ncopies):
+    """
+    Return a function to write a chunk by index to the given file to produce n copies of the array.
+    """
+
+    def write_n_chunks(index_arr):
+        import gcsfs.mapping
+
+        gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
+        store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
+        index, arr = index_arr
+        z = zarr.open(store, mode="r+")
+        chunk_size = z.chunks
+        for i in range(ncopies):
+            effective_index = index + i * (size // chunk_size[0])
+            z[
+                chunk_size[0] * effective_index : chunk_size[0] * (effective_index + 1),
+                :,
+            ] = arr
+
+    return write_n_chunks
 
 
 def calculate_partition_boundaries(chunks, partition_row_counts):

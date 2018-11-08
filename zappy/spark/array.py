@@ -119,8 +119,6 @@ class SparkZappyArray(ZappyArray):
         )
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
-
         def index_partitions(index, iterator):
             values = list(iterator)
             assert len(values) == 1  # 1 numpy array per partition

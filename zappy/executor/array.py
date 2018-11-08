@@ -209,7 +209,6 @@ class ExecutorZappyArray(ZappyArray):
         )
 
     def _write_zarr(self, store, chunks, write_chunk_fn):
-        zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
         indices = self.dag.add_input(list(range(len(self.partition_row_counts))))
         output = self.dag.transform(
             lambda x, y: write_chunk_fn((x, y)), [indices, self.input]

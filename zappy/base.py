@@ -3,6 +3,7 @@ import copy as cp
 import numbers
 import numpy as np
 import sys
+import zarr
 
 from functools import partial
 
@@ -11,6 +12,8 @@ from zappy.zarr_util import (
     read_zarr_chunk,
     write_chunk,
     write_chunk_gcs,
+    write_n_chunk_copies,
+    write_n_chunk_copies_gcs,
 )
 
 from numpy import *  # include everything in base numpy
@@ -270,27 +273,58 @@ class ZappyArray:
         else:
             return self._repartition_chunks(chunks)
 
-    def to_zarr(self, zarr_file, chunks):
+    def to_zarr(self, zarr_file, chunks, ncopies=1):
         """
         Write an ZappyArray object to a Zarr file.
         """
+        if ncopies != 1:
+            assert self.shape[0] % chunks[0] == 0
+            shape = (self.shape[0] * ncopies, self.shape[1])
+            zarr.open(zarr_file, mode="w", shape=shape, chunks=chunks, dtype=self.dtype)
+            self._write_zarr(
+                zarr_file,
+                chunks,
+                write_n_chunk_copies(zarr_file, self.shape[0], ncopies),
+            )
+            return
+        zarr.open(
+            zarr_file, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype
+        )
         repartitioned = self._repartition_if_necessary(chunks)
         repartitioned._write_zarr(zarr_file, chunks, write_chunk(zarr_file))
 
-    def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud"):
+    def to_zarr_gcs(self, gcs_path, chunks, gcs_project, gcs_token="cloud", ncopies=1):
         """
         Write an ZappyArray object to a Zarr file on GCS.
         """
+        if ncopies != 1:
+            assert self.shape[0] % chunks[0] == 0
+            shape = (self.shape[0] * ncopies, self.shape[1])
+            import gcsfs.mapping
+
+            gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
+            store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
+            zarr.open(store, mode="w", shape=shape, chunks=chunks, dtype=self.dtype)
+            self._write_zarr(
+                store,
+                chunks,
+                write_n_chunk_copies_gcs(
+                    gcs_path, gcs_project, gcs_token, self.shape[0], ncopies
+                ),
+            )
+            return
+
         repartitioned = self._repartition_if_necessary(chunks)
         import gcsfs.mapping
 
         gcs = gcsfs.GCSFileSystem(gcs_project, token=gcs_token)
         store = gcsfs.mapping.GCSMap(gcs_path, gcs=gcs)
+        zarr.open(store, mode="w", shape=self.shape, chunks=chunks, dtype=self.dtype)
         repartitioned._write_zarr(
             store, chunks, write_chunk_gcs(gcs_path, gcs_project, gcs_token)
         )
 
-    def _write_zarr(self, store, chunks, write_chunk_fn):
+    def _write_zarr(self, store, chunks, write_chunk_fn, ncopies=1):
         return NotImplemented
 
     # Array conversion (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#array-methods)
