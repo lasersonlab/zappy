@@ -55,9 +55,7 @@ class PywrenExecutor(object):
             func, iterables, exclude_modules=self.exclude_modules
         )
         pywren.wait(futures, return_when=pywren.ALL_COMPLETED)
-        # Set throw_except to False, since when writing Zarr we don't return anything.
-        # However, Pywren should be improved to distinguish between no return value and an exception.
-        results = [f.result(throw_except=False) for f in futures]
+        results = [f.result() for f in futures]
         if self.record_job_history:
             run_statuses = [f.run_status for f in futures]
             invoke_statuses = [f.invoke_status for f in futures]
