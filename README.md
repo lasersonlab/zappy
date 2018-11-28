@@ -25,6 +25,12 @@ parts of [Scanpy], as demonstrated in the [Single Cell Experiments] repo.
 pip install zappy
 ```
 
+Alternatively, zappy can be installed using [Conda](https://conda.io/docs/) (most easily obtained via the [Miniconda Python distribution](https://conda.io/miniconda.html)):
+
+```
+conda install -c conda-forge zappy
+```
+
 ## Demo
 
 Take a look at the rendered [demo Jupyter notebook](demo.ipynb), or try it out yourself as follows.
