@@ -9,6 +9,13 @@ class Input:
     def compute(self, input_values):
         return input_values[self.index]
 
+    def node(self):
+        return '"Input({}, {})"'.format(id(self), self.index)
+
+    def dot(self, s=""):
+        s += "{}\n".format(self.node())
+        return s
+
 
 class LazyVal:
     def __init__(self, func, inputs):
@@ -19,6 +26,16 @@ class LazyVal:
     def compute(self, input_values):
         computed_inputs = [input.compute(input_values) for input in self.inputs]
         return unpack_args(self.func)(computed_inputs)
+
+    def node(self):
+        return '"LazyVal({}, {})"'.format(id(self), self.func)
+
+    def dot(self, s=""):
+        for input in self.inputs:
+            s += "{} -> {}\n".format(self.node(), input.node())
+        for input in self.inputs:
+            s = input.dot(s)
+        return s
 
 
 class DAG:
@@ -46,4 +63,6 @@ class DAG:
         return zip(*self.partitioned_inputs)
 
     def compute(self, output):
+        # Uncomment to see the dot representation of the DAG
+        # print("digraph compute {{\n{}}}".format(output.dot()))
         return self.executor.map(output.compute, self._get_zipped_inputs())
