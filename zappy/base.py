@@ -215,7 +215,7 @@ class ZappyArray:
         out = kwargs.get("out")
         obj = out if out else cp.copy(self)
         for key, value in kwargs.items():
-            if key != "out":
+            if key != "out" and not (key == "dtype" and value is None):
                 setattr(obj, key, value)
         return obj
 
