@@ -1,4 +1,5 @@
 import builtins
+import concurrent.futures
 import datetime
 import os
 import pickle
@@ -91,9 +92,10 @@ class ExecutorZappyArray(ZappyArray):
         self.executor = executor
         self.dag = dag
         self.input = input
-        if intermediate_store == None:
-            intermediate_store = zarr.group()
-        self.intermediate_store = intermediate_store
+        if intermediate_store is None:
+            self.intermediate_group = zarr.group()
+        else:
+            self.intermediate_group = zarr.group(intermediate_store)
 
     # methods to convert to/from regular ndarray - mainly for testing
     @classmethod
@@ -162,10 +164,10 @@ class ExecutorZappyArray(ZappyArray):
         )
 
         # make a new zarr group in the intermediate store with a unique name
-        root = self.intermediate_store.create_group(str(uuid.uuid4()))
+        root = self.intermediate_group.create_group(str(uuid.uuid4()))
         # make a zarr group for each partition
-        for index in range(new_num_partitions):
-            root.create_group(str(index))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=64) as executor:
+            executor.map(lambda index: root.create_group(str(index)), range(new_num_partitions))
 
         def tmp_store(pairs):
             for pair in pairs:
@@ -183,7 +185,7 @@ class ExecutorZappyArray(ZappyArray):
         # run computation to save partial chunks
         list(self.dag.compute(x3))
 
-        # create a new computation to read partial chunks
+        # create a new computation to read and combine partial chunks
         def tmp_load(new_index):
             # last chunk has fewer than c rows
             if new_index == new_num_partitions - 1 and total_rows % c != 0:
