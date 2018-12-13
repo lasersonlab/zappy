@@ -1,6 +1,8 @@
+coveralls
 future
 numpy
 pyspark
 pytest
+pytest-cov
 tox
 zarr

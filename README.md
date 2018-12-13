@@ -3,6 +3,9 @@
 Zappy is for distributed processing of chunked NumPy arrays on engines like [Pywren], Apache Spark, and Apache Beam.
 
 [![Build Status](https://travis-ci.org/lasersonlab/zappy.svg?branch=master)](https://travis-ci.org/lasersonlab/zappy)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Coverage Status](https://coveralls.io/repos/github/lasersonlab/zappy/badge.svg)](https://coveralls.io/github/lasersonlab/zappy)
+[![PyPI version shields.io](https://img.shields.io/pypi/v/zappy.svg)](https://pypi.python.org/pypi/zappy/)
 
 The `zappy.base` module defines a `ZappyArray` class that exposes the same interface as `numpy.ndarray`, and which
 is backed by distributed storage and processing. The array is broken into chunks, and is typically loaded from [Zarr],
