@@ -45,6 +45,14 @@ def test_dag_multiple_partitions():
     assert list(dag.compute(output)) == [3, 4, 6]
 
 
+def test_dag_multiple_partitions_binary_function():
+    dag = DAG(concurrent.futures.ThreadPoolExecutor())
+    input1 = dag.add_input([2, 3, 5])
+    input2 = dag.add_input([7, 11, 13])
+    output = dag.transform(add, [input1, input2])
+    assert list(dag.compute(output)) == [9, 14, 18]
+
+
 def test_incompatible_num_partitions():
     dag = DAG(concurrent.futures.ThreadPoolExecutor())
     dag.add_input([2])
@@ -56,3 +64,11 @@ def test_no_transform():
     dag = DAG(concurrent.futures.ThreadPoolExecutor())
     output = dag.add_input([2])
     assert list(dag.compute(output)) == [2]
+
+
+def test_dag_multiple_transforms():
+    dag = DAG(concurrent.futures.ThreadPoolExecutor())
+    input = dag.add_input([2, 3, 5])
+    inter = dag.transform(add_one, [input])
+    output = dag.transform(add_one, [inter])
+    assert list(dag.compute(output)) == [4, 5, 7]

@@ -1,3 +1,6 @@
+import concurrent.futures
+
+
 def unpack_args(f):
     return lambda x: f(*x)
 
@@ -41,6 +44,7 @@ class LazyVal:
 class DAG:
     def __init__(self, executor):
         self.executor = executor
+        self.local_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self.num_partitions = 0
         self.partitioned_inputs = []
 
@@ -65,6 +69,9 @@ class DAG:
     def compute(self, output):
         # Uncomment to see the dot representation of the DAG
         # print("digraph compute {{\n{}}}".format(output.dot()))
+        if len(list(self._get_zipped_inputs())) == 1:
+            # run single partitions locally
+            return self.local_executor.map(output.compute, self._get_zipped_inputs())
         return self.executor.map(output.compute, self._get_zipped_inputs())
 
     def compute_multiple(self, outputs):
