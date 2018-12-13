@@ -33,6 +33,10 @@ def ones(executor, shape, chunks, dtype=float, intermediate_store=None):
     return ExecutorZappyArray.ones(executor, shape, chunks, dtype, intermediate_store)
 
 
+def asndarrays(arrays):
+    return ExecutorZappyArray.asndarrays(arrays)
+
+
 class PywrenExecutor(object):
     """Small wrapper to make a Pywren executor behave like a concurrent.futures.Executor."""
 
@@ -154,6 +158,25 @@ class ExecutorZappyArray(ZappyArray):
             intermediate_store=intermediate_store,
         )
 
+    @classmethod
+    def asndarrays(cls, arrays):
+        """Compute all the input arrays in a single executor and return a tuple of ndarrays."""
+        # TODO: cache data read from zarr
+        if (
+            len(arrays) > 0 and len(set([arr.dag for arr in arrays])) == 1
+        ):  # all dags the same
+            array_chunk_tuples = arrays[0].dag.compute_multiple(
+                [arr.input for arr in arrays]
+            )
+            return tuple(
+                ZappyArray._array_chunks_to_ndarray(
+                    array_chunks, arrays[index].partition_row_counts
+                )
+                for (index, array_chunks) in enumerate(array_chunk_tuples)
+            )
+        else:
+            return tuple(arr.asndarray() for arr in arrays)
+
     def _compute(self):
         return list(self.dag.compute(self.input))
 
@@ -167,7 +190,9 @@ class ExecutorZappyArray(ZappyArray):
         root = self.intermediate_group.create_group(str(uuid.uuid4()))
         # make a zarr group for each partition
         with concurrent.futures.ThreadPoolExecutor(max_workers=64) as executor:
-            executor.map(lambda index: root.create_group(str(index)), range(new_num_partitions))
+            executor.map(
+                lambda index: root.create_group(str(index)), range(new_num_partitions)
+            )
 
         def tmp_store(pairs):
             for pair in pairs:

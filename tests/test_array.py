@@ -380,3 +380,10 @@ class TestZappyArray:
         totals = np.sum(ones, axis=0)
         x = np.array([3, 3, 3, 3, 3])
         assert_allclose(totals.asndarray(), x)
+
+    def test_asndarrays(self, x, xd):
+        if not isinstance(xd, zappy.executor.array.ExecutorZappyArray):
+            return
+        xd1, xd2 = zappy.executor.asndarrays((xd + 1, xd + 2))
+        assert_allclose(xd1, x + 1)
+        assert_allclose(xd2, x + 2)

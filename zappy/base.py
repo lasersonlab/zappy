@@ -240,20 +240,24 @@ class ZappyArray:
         chunk_indices = get_chunk_indices(shape, chunks)
         return func, chunk_indices
 
-    def asndarray(self):
-        inputs = self._compute()
-        partition_row_counts = self.partition_row_counts
-        local_row_counts = [len(arr) for arr in inputs]
+    @staticmethod
+    def _array_chunks_to_ndarray(array_chunks, partition_row_counts):
+        local_row_counts = [len(arr) for arr in array_chunks]
         assert local_row_counts == list(partition_row_counts), (
             "Local row counts: %s; partition row counts: %s"
             % (local_row_counts, partition_row_counts)
         )
-        arr = np.concatenate(inputs)
+        arr = np.concatenate(array_chunks)
         assert arr.shape[0] == builtins.sum(partition_row_counts), (
             "Local #rows: %s; partition row counts total: %s"
             % (arr.shape[0], builtins.sum(partition_row_counts))
         )
         return arr
+
+    def asndarray(self):
+        return ZappyArray._array_chunks_to_ndarray(
+            self._compute(), self.partition_row_counts
+        )
 
     def _compute(self):
         """

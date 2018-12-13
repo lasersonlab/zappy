@@ -66,3 +66,9 @@ class DAG:
         # Uncomment to see the dot representation of the DAG
         # print("digraph compute {{\n{}}}".format(output.dot()))
         return self.executor.map(output.compute, self._get_zipped_inputs())
+
+    def compute_multiple(self, outputs):
+        def apply_multiple(x):
+            return tuple(f(x) for f in tuple(output.compute for output in outputs))
+
+        return zip(*self.executor.map(apply_multiple, self._get_zipped_inputs()))
