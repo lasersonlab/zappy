@@ -318,7 +318,9 @@ class ExecutorZappyArray(ZappyArray):
 
     def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         other = asarray(other)  # materialize
-        partition_row_subsets = self._copartition(other, self.partition_row_counts)
+        partition_row_subsets = ZappyArray._copartition(
+            other, self.partition_row_counts
+        )
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(func, [self.input, side_input])
         return self._new(input=input, out=out, dtype=dtype)
@@ -334,8 +336,12 @@ class ExecutorZappyArray(ZappyArray):
     def _boolean_array_index_dist(self, item):
         # almost identical to row subset below (only lambda has different indexing)
         subset = asarray(item)  # materialize
-        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
+        partition_row_subsets = ZappyArray._copartition(
+            subset, self.partition_row_counts
+        )
+        new_partition_row_counts = ZappyArray._partition_row_counts(
+            partition_row_subsets
+        )
         new_shape = (builtins.sum(new_partition_row_counts),)
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(lambda x, y: x[y], [self.input, side_input])
@@ -350,17 +356,21 @@ class ExecutorZappyArray(ZappyArray):
             new_chunks = (self.chunks[0], new_num_cols)
             input = self.dag.transform(lambda x: x[:, np.newaxis], [self.input])
             return self._new(input=input, shape=new_shape, chunks=new_chunks)
-        subset = self._materialize_index(item[1])
-        new_num_cols = self._compute_dim(self.shape[1], subset)
+        subset = ZappyArray._materialize_index(item[1])
+        new_num_cols = ZappyArray._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         input = self.dag.transform(lambda x: x[item], [self.input])
         return self._new(input=input, shape=new_shape, chunks=new_chunks)
 
     def _row_subset(self, item):
-        subset = asarray(item[0])  # materialize
-        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
+        subset = ZappyArray._materialize_index(item[0])  # materialize
+        partition_row_subsets = ZappyArray._copartition(
+            subset, self.partition_row_counts
+        )
+        new_partition_row_counts = ZappyArray._partition_row_counts(
+            partition_row_subsets, self.partition_row_counts
+        )
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         side_input = self.dag.add_input(partition_row_subsets)
         input = self.dag.transform(lambda x, y: x[y, :], [self.input, side_input])

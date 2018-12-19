@@ -220,8 +220,12 @@ class BeamZappyArray(ZappyArray):
 
     def _boolean_array_index_dist(self, item):
         subset = asarray(item)  # materialize
-        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
+        partition_row_subsets = ZappyArray._copartition(
+            subset, self.partition_row_counts
+        )
+        new_partition_row_counts = ZappyArray._partition_row_counts(
+            partition_row_subsets
+        )
         new_shape = (builtins.sum(new_partition_row_counts),)
 
         # Beam doesn't have a direct equivalent of Spark's zip function, so we use a side input and join here
@@ -258,8 +262,8 @@ class BeamZappyArray(ZappyArray):
         new_pcollection = self.pcollection | gensym("column_subset") >> beam.Map(
             lambda pair: (pair[0], pair[1][item])
         )
-        subset = self._materialize_index(item[1])
-        new_num_cols = self._compute_dim(self.shape[1], subset)
+        subset = ZappyArray._materialize_index(item[1])
+        new_num_cols = ZappyArray._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(
@@ -267,9 +271,13 @@ class BeamZappyArray(ZappyArray):
         )
 
     def _row_subset(self, item):
-        subset = asarray(item[0])  # materialize
-        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
+        subset = ZappyArray._materialize_index(item[0])  # materialize
+        partition_row_subsets = ZappyArray._copartition(
+            subset, self.partition_row_counts
+        )
+        new_partition_row_counts = ZappyArray._partition_row_counts(
+            partition_row_subsets, self.partition_row_counts
+        )
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
 
         # Beam doesn't have a direct equivalent of Spark's zip function, so we use a side input and join here

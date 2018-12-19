@@ -193,7 +193,9 @@ class SparkZappyArray(ZappyArray):
 
     def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
         other = asarray(other)  # materialize
-        partition_row_subsets = self._copartition(other, self.partition_row_counts)
+        partition_row_subsets = ZappyArray._copartition(
+            other, self.partition_row_counts
+        )
         repartitioned_other_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)
         )
@@ -221,8 +223,12 @@ class SparkZappyArray(ZappyArray):
 
     def _boolean_array_index_dist(self, item):
         subset = asarray(item)  # materialize
-        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
+        partition_row_subsets = ZappyArray._copartition(
+            subset, self.partition_row_counts
+        )
+        new_partition_row_counts = ZappyArray._partition_row_counts(
+            partition_row_subsets
+        )
         new_shape = (builtins.sum(new_partition_row_counts),)
         subset_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)
@@ -243,8 +249,8 @@ class SparkZappyArray(ZappyArray):
                 shape=new_shape,
                 chunks=new_chunks,
             )
-        subset = self._materialize_index(item[1])
-        new_num_cols = self._compute_dim(self.shape[1], subset)
+        subset = ZappyArray._materialize_index(item[1])
+        new_num_cols = ZappyArray._compute_dim(self.shape[1], subset)
         new_shape = (self.shape[0], new_num_cols)
         new_chunks = (self.chunks[0], new_num_cols)
         return self._new(
@@ -252,9 +258,13 @@ class SparkZappyArray(ZappyArray):
         )
 
     def _row_subset(self, item):
-        subset = asarray(item[0])  # materialize
-        partition_row_subsets = self._copartition(subset, self.partition_row_counts)
-        new_partition_row_counts = self._partition_row_counts(partition_row_subsets)
+        subset = ZappyArray._materialize_index(item[0])  # materialize
+        partition_row_subsets = ZappyArray._copartition(
+            subset, self.partition_row_counts
+        )
+        new_partition_row_counts = ZappyArray._partition_row_counts(
+            partition_row_subsets, self.partition_row_counts
+        )
         new_shape = (builtins.sum(new_partition_row_counts), self.shape[1])
         subset_rdd = self.sc.parallelize(
             partition_row_subsets, len(partition_row_subsets)

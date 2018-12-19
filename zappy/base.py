@@ -473,26 +473,58 @@ class ZappyArray:
     # Utility methods
     # TODO: document
 
-    def _copartition(self, arr, partition_row_counts):
-        if arr.dtype == np.dtype(int):  # indexes
+    @staticmethod
+    def _copartition(arr, partition_row_counts):
+        """Partition an array or slice according to the given row counts.
+        The array can be of indexes, or values.
+        """
+        if isinstance(arr, slice):  # slice
             cum = np.cumsum(partition_row_counts)[0:-1]
-            index_breaks = np.searchsorted(arr, cum)
-            splits = np.array(np.split(arr, index_breaks))
-            if len(splits[-1]) == 0:
-                splits = np.array(splits[0:-1])
             offsets = np.insert(cum, 0, 0)  # add a leading 0
-            partition_row_subsets = splits - offsets
+            start = arr.start if arr.start is not None else 0
+            stop = arr.stop if arr.stop is not None else np.sum(partition_row_counts)
+            # find the partition index where the slice starts and stops
+            starti = np.searchsorted(cum, start, side="right")
+            stopi = np.searchsorted(cum, stop)
+            partition_row_subsets = [slice(0, 0)] * starti
+            for i in range(starti, stopi + 1):
+                subset_start = start - offsets[i] if i == starti else None
+                subset_stop = stop - offsets[i] if i == stopi else None
+                partition_row_subsets.append(slice(subset_start, subset_stop))
+            partition_row_subsets.extend(
+                [slice(0, 0)] * (len(partition_row_counts) - (stopi + 1))
+            )
+            return partition_row_subsets
+        elif arr.dtype == np.dtype(int):  # indexes
+            cum = np.cumsum(partition_row_counts)[0:-1]
+            offsets = np.insert(cum, 0, 0)  # add a leading 0
+            index_breaks = np.searchsorted(arr, cum)
+            splits = np.split(arr, index_breaks)
+            partition_row_subsets = []
+            for index, split in enumerate(splits):
+                if len(split) == 0:
+                    partition_row_subsets.append(split)
+                else:
+                    partition_row_subsets.append(split - offsets[index])
             return partition_row_subsets
         else:  # values
-            return self._copartition_values(arr, partition_row_counts)
+            return ZappyArray._copartition_values(arr, partition_row_counts)
 
-    def _copartition_values(self, arr, partition_row_counts):
-        partition_row_subsets = np.split(arr, np.cumsum(partition_row_counts)[0:-1])
-        if len(partition_row_subsets[-1]) == 0:
-            partition_row_subsets = partition_row_subsets[0:-1]
-        return partition_row_subsets
+    @staticmethod
+    def _copartition_values(arr, partition_row_counts):
+        return np.split(arr, np.cumsum(partition_row_counts)[0:-1])
 
-    def _partition_row_counts(self, partition_row_subsets):
+    @staticmethod
+    def _partition_row_counts(partition_row_subsets, partition_row_counts=None):
+        if isinstance(partition_row_subsets[0], slice):
+            counts = []
+            for i, subset in enumerate(partition_row_subsets):
+                start = subset.start if subset.start is not None else 0
+                stop = (
+                    subset.stop if subset.stop is not None else partition_row_counts[i]
+                )
+                counts.append(stop - start)
+            return counts
         dtype = partition_row_subsets[0].dtype
         if dtype == np.dtype(bool):
             return [int(builtins.sum(s)) for s in partition_row_subsets]
@@ -500,12 +532,16 @@ class ZappyArray:
             return [len(s) for s in partition_row_subsets]
         return NotImplemented
 
-    def _materialize_index(self, index):
+    @staticmethod
+    def _materialize_index(index):
+        """Materialize index as an ndarray, or leave as a slice."""
         if isinstance(index, slice):
             return index
         return asarray(index)
 
-    def _compute_dim(self, dim, subset):
+    @staticmethod
+    def _compute_dim(dim, subset):
+        """Compute the dimension of an index or slice."""
         all_indices = slice(None, None, None)
         if isinstance(subset, slice):
             if subset == all_indices:

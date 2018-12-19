@@ -248,12 +248,21 @@ class TestZappyArray:
         assert xd.shape == x.shape
         assert_allclose(xd.asndarray(), x)
 
-    # TODO: implement row slicing
-    # def test_slice_rows(self, x, xd):
-    #     xd = xd[1:3, :]
-    #     x = x[1:3, :]
-    #     assert xd.shape == x.shape
-    #     assert_allclose(xd.asndarray(), x)
+    def test_slice_rows(self, x, xd):
+        xd = xd[1:3, :]
+        x = x[1:3, :]
+        assert xd.shape == x.shape
+        assert_allclose(xd.asndarray(), x)
+
+    def test_slice_rows_shrink_partitions(self, x, xd):
+        if sys.version_info[0] == 2 and isinstance(
+                xd, zappy.beam.array.BeamZappyArray
+        ):  # TODO: fix this
+            return
+        xd = xd[0:2, :]
+        x = x[0:2, :]
+        assert xd.shape == x.shape
+        assert_allclose(xd.asndarray(), x)
 
     def test_subset_cols_boolean(self, x, xd):
         subset = np.array([True, False, True, False, True])
@@ -277,8 +286,7 @@ class TestZappyArray:
         assert_allclose(xd.asndarray(), x)
 
     def test_subset_rows_int(self, x, xd):
-        # TODO: this fails if changed to `subset = np.array([1, 2])`
-        subset = np.array([0, 1, 2])
+        subset = np.array([1, 2])
         xd = xd[subset, :]
         x = x[subset, :]
         assert xd.shape == x.shape
