@@ -474,7 +474,7 @@ class ZappyArray:
     # TODO: document
 
     @staticmethod
-    def _copartition(arr, partition_row_counts):
+    def _copartition(arr, partition_row_counts, shrink=False):
         """Partition an array or slice according to the given row counts.
         The array can be of indexes, or values.
         """
@@ -491,9 +491,10 @@ class ZappyArray:
                 subset_start = start - offsets[i] if i == starti else None
                 subset_stop = stop - offsets[i] if i == stopi else None
                 partition_row_subsets.append(slice(subset_start, subset_stop))
-            partition_row_subsets.extend(
-                [slice(0, 0)] * (len(partition_row_counts) - (stopi + 1))
-            )
+            if not shrink:
+                partition_row_subsets.extend(
+                    [slice(0, 0)] * (len(partition_row_counts) - (stopi + 1))
+                )
             return partition_row_subsets
         elif arr.dtype == np.dtype(int):  # indexes
             cum = np.cumsum(partition_row_counts)[0:-1]

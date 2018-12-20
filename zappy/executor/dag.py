@@ -50,10 +50,16 @@ class DAG:
 
     def add_input(self, partitioned_input):
         assert len(partitioned_input) > 0
+        # first input sets the number of partitions
         if self.num_partitions == 0:
             self.num_partitions = len(partitioned_input)
-        else:  # further inputs must have same number of partitions as first
-            assert self.num_partitions == len(partitioned_input)
+        # further inputs cannot grow the number of partitions
+        elif self.num_partitions < len(partitioned_input):
+            assert self.num_partitions >= len(partitioned_input)
+        # but they can shrink (e.g. when subsetting rows)
+        else:
+            self.num_partitions = len(partitioned_input)
+            self.partitioned_inputs = [inputs[:self.num_partitions] for inputs in self.partitioned_inputs]
         index = len(self.partitioned_inputs)
         self.partitioned_inputs.append(partitioned_input)
         return Input(index)

@@ -366,7 +366,7 @@ class ExecutorZappyArray(ZappyArray):
     def _row_subset(self, item):
         subset = ZappyArray._materialize_index(item[0])  # materialize
         partition_row_subsets = ZappyArray._copartition(
-            subset, self.partition_row_counts
+            subset, self.partition_row_counts, shrink=True
         )
         new_partition_row_counts = ZappyArray._partition_row_counts(
             partition_row_subsets, self.partition_row_counts
