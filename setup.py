@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="zappy",
-    version="0.1.0",
+    version="0.2.0",
     description="Distributed processing with NumPy and Zarr.",
     long_description=long_description,
     long_description_content_type="text/markdown",
