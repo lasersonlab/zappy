@@ -59,7 +59,9 @@ class DAG:
         # but they can shrink (e.g. when subsetting rows)
         else:
             self.num_partitions = len(partitioned_input)
-            self.partitioned_inputs = [inputs[:self.num_partitions] for inputs in self.partitioned_inputs]
+            self.partitioned_inputs = [
+                inputs[: self.num_partitions] for inputs in self.partitioned_inputs
+            ]
         index = len(self.partitioned_inputs)
         self.partitioned_inputs.append(partitioned_input)
         return Input(index)

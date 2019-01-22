@@ -59,7 +59,7 @@ class BeamZappyArray(ZappyArray):
 
     def _compute(self):
         # create a zarr groups to materialize arrays to
-        sym = gensym("asndarray")
+        sym = gensym("compute")
         store = zarr.TempStore()
         root = zarr.open(store, mode="w")  # TODO: allow cloud storage
 
@@ -189,7 +189,7 @@ class BeamZappyArray(ZappyArray):
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, out=None, dtype=None
     ):
-        other = asarray(other)  # materialize
+        other = np.asarray(other)  # materialize
         # TODO: should send 'other' as a Beam side input
         new_pcollection = self.pcollection | gensym(func.__name__) >> beam.Map(
             lambda pair: (pair[0], func(pair[1], other))
@@ -219,7 +219,7 @@ class BeamZappyArray(ZappyArray):
     # Slicing
 
     def _boolean_array_index_dist(self, item):
-        subset = asarray(item)  # materialize
+        subset = np.asarray(item)  # materialize
         partition_row_subsets = ZappyArray._copartition(
             subset, self.partition_row_counts
         )

@@ -312,12 +312,12 @@ class ExecutorZappyArray(ZappyArray):
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, out=None, dtype=None
     ):
-        other = asarray(other)  # materialize
+        other = np.asarray(other)  # materialize
         input = self.dag.transform(lambda x: func(x, other), [self.input])
         return self._new(input=input, out=out, dtype=dtype)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
-        other = asarray(other)  # materialize
+        other = np.asarray(other)  # materialize
         partition_row_subsets = ZappyArray._copartition(
             other, self.partition_row_counts
         )
@@ -335,7 +335,7 @@ class ExecutorZappyArray(ZappyArray):
 
     def _boolean_array_index_dist(self, item):
         # almost identical to row subset below (only lambda has different indexing)
-        subset = asarray(item)  # materialize
+        subset = np.asarray(item)  # materialize
         partition_row_subsets = ZappyArray._copartition(
             subset, self.partition_row_counts
         )

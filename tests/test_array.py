@@ -2,7 +2,7 @@ import concurrent.futures
 import logging
 import pytest
 import sys
-import zappy.base as np  # zappy includes everything in numpy, with some overrides and new functions
+import numpy as np
 import zappy.executor
 import zappy.direct
 import zappy.spark
@@ -165,13 +165,13 @@ class TestZappyArray:
             yield zappy.spark.ones(sc, (3, 5), chunks=(2, 5), dtype=int)
 
     def test_identity(self, x, xd):
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_astype(self, x, xd):
         xd = xd.astype(int)
         x = x.astype(int)
         assert xd.dtype == x.dtype
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_astype_inplace(self, x, xd):
         original_id = id(xd)
@@ -179,23 +179,26 @@ class TestZappyArray:
         assert original_id == id(xd)
         x = x.astype(int, copy=False)
         assert xd.dtype == x.dtype
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
+
+    def test_asarray(self, x, xd):
+        assert_allclose(np.asarray(xd), x)
 
     def test_scalar_arithmetic(self, x, xd):
         xd = (((xd + 1) * 2) - 4) / 1.1
         x = (((x + 1) * 2) - 4) / 1.1
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_arithmetic(self, x, xd):
         xd = xd * 2 + xd
         x = x * 2 + x
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_broadcast_row(self, x, xd):
         a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         xd = xd + a
         x = x + a
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_broadcast_col(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
@@ -205,30 +208,30 @@ class TestZappyArray:
         a = np.array([[1.0], [2.0], [3.0]])
         xd = xd + a
         x = x + a
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_eq(self, x, xd):
         xd = xd == 0.0
         x = x == 0.0
         assert xd.dtype == x.dtype
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_ne(self, x, xd):
         xd = xd != 0.0
         x = x != 0.0
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_invert(self, x, xd):
         xd = ~(xd == 0.0)
         x = ~(x == 0.0)
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_inplace(self, x, xd):
         original_id = id(xd)
         xd += 1
         assert original_id == id(xd)
         x += 1
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_simple_index(self, x, xd):
         xd = xd[0]
@@ -240,65 +243,65 @@ class TestZappyArray:
         xd = xd[xd > 5]
         x = np.sum(x, axis=1)  # sum rows
         x = x[x > 5]
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_slice_cols(self, x, xd):
         xd = xd[:, 1:3]
         x = x[:, 1:3]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_slice_rows(self, x, xd):
         xd = xd[1:3, :]
         x = x[1:3, :]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_slice_rows_shrink_partitions(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
-                xd, zappy.beam.array.BeamZappyArray
+            xd, zappy.beam.array.BeamZappyArray
         ):  # TODO: fix this
             return
         xd = xd[0:2, :]
         x = x[0:2, :]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_subset_cols_boolean(self, x, xd):
         subset = np.array([True, False, True, False, True])
         xd = xd[:, subset]
         x = x[:, subset]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_subset_rows_boolean(self, x, xd):
         subset = np.array([True, False, True])
         xd = xd[subset, :]
         x = x[subset, :]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_subset_cols_int(self, x, xd):
         subset = np.array([1, 3])
         xd = xd[:, subset]
         x = x[:, subset]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_subset_rows_int(self, x, xd):
         subset = np.array([1, 2])
         xd = xd[subset, :]
         x = x[subset, :]
         assert xd.shape == x.shape
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_newaxis(self, x, xd):
         xd = np.sum(xd, axis=1)[:, np.newaxis]
         x = np.sum(x, axis=1)[:, np.newaxis]
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_log1p(self, x, xd):
-        log1pnps = np.log1p(xd).asndarray()
+        log1pnps = np.asarray(np.log1p(xd))
         log1pnp = np.log1p(x)
         assert_allclose(log1pnps, log1pnp)
 
@@ -314,12 +317,12 @@ class TestZappyArray:
     def test_sum_cols(self, x, xd):
         xd = np.sum(xd, axis=0)
         x = np.sum(x, axis=0)
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_sum_rows(self, x, xd):
         xd = np.sum(xd, axis=1)
         x = np.sum(x, axis=1)
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_mean(self, x, xd):
         if sys.version_info[0] == 2 and isinstance(
@@ -333,12 +336,12 @@ class TestZappyArray:
     def test_mean_cols(self, x, xd):
         xd = np.mean(xd, axis=0)
         x = np.mean(x, axis=0)
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_mean_rows(self, x, xd):
         xd = np.mean(xd, axis=1)
         x = np.mean(x, axis=1)
-        assert_allclose(xd.asndarray(), x)
+        assert_allclose(np.asarray(xd), x)
 
     def test_var(self, x, xd):
         def var(x):
@@ -346,9 +349,14 @@ class TestZappyArray:
             mean_sq = np.multiply(x, x).mean(axis=0)
             return mean_sq - mean ** 2
 
-        varnps = var(xd).asndarray()
+        varnps = np.asarray(var(xd))
         varnp = var(x)
         assert_allclose(varnps, varnp)
+
+    def test_median(self, x, xd):
+        mediand = np.median(xd)  # implicitly converts to np.array
+        median = np.median(x)
+        assert mediand == pytest.approx(median)
 
     def test_write_zarr(self, x, xd_and_temp_store):
         xd, temp_store = xd_and_temp_store
@@ -382,12 +390,12 @@ class TestZappyArray:
     def test_zeros(self, zeros):
         totals = np.sum(zeros, axis=0)
         x = np.array([0, 0, 0, 0, 0])
-        assert_allclose(totals.asndarray(), x)
+        assert_allclose(np.asarray(totals), x)
 
     def test_ones(self, ones):
         totals = np.sum(ones, axis=0)
         x = np.array([3, 3, 3, 3, 3])
-        assert_allclose(totals.asndarray(), x)
+        assert_allclose(np.asarray(totals), x)
 
     def test_asndarrays(self, x, xd):
         if not isinstance(xd, zappy.executor.array.ExecutorZappyArray):

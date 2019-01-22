@@ -2,7 +2,6 @@ import builtins
 import copy as cp
 import numbers
 import numpy as np
-import sys
 import zarr
 
 from functools import partial
@@ -16,189 +15,8 @@ from zappy.zarr_util import (
     write_n_chunk_copies_gcs,
 )
 
-from numpy import *  # include everything in base numpy
 
-npd = sys.modules[__name__]
-
-
-def asarray(a):
-    if isinstance(a, ZappyArray):
-        return a.asndarray()
-    return np.asarray(a)
-
-
-def _delegate_to_np(func):
-    """Delegate to numpy if the first arg is not a ZappyArray"""
-
-    def delegated_func(*args, **kwargs):
-        if len(args) > 0 and isinstance(args[0], ZappyArray):
-            return func(*args, **kwargs)
-        # delegate to the equivalent in numpy
-        return getattr(np, func.__name__)(*args, **kwargs)
-
-    return delegated_func
-
-
-def _delegate_to_np_dist(func):
-    """Delegate to numpy if the first arg is not a ZappyArray"""
-
-    def delegated_func(*args, **kwargs):
-        if len(args) > 0 and isinstance(args[0], ZappyArray):
-            return args[0]._dist_ufunc(func, args[1:], **kwargs)
-        # delegate to the equivalent in numpy
-        return getattr(np, func.__name__)(*args, **kwargs)
-
-    return delegated_func
-
-
-# Implement numpy ufuncs
-# see https://docs.scipy.org/doc/numpy-1.14.0/reference/ufuncs.html#available-ufuncs
-UFUNC_NAMES = (
-    # Math operations (https://docs.scipy.org/doc/numpy-1.14.0/reference/ufuncs.html#math-operations)
-    "add",
-    "subtract",
-    "multiply",
-    "divide",
-    "logaddexp",
-    "logaddexp2",
-    "true_divide",
-    "floor_divide",
-    "negative",
-    "positive",
-    "power",
-    "remainder",
-    "mod",
-    "fmod",
-    # 'divmod', # not implemented since returns pair
-    "absolute",
-    "abs",
-    "fabs",
-    "rint",
-    "sign",
-    "heaviside",
-    "conj",
-    "exp",
-    "exp2",
-    "log",
-    "log2",
-    "log10",
-    "expm1",
-    "log1p",
-    "sqrt",
-    "square",
-    "cbrt",
-    "reciprocal",
-    # Trigonometric functions (https://docs.scipy.org/doc/numpy-1.14.0/reference/ufuncs.html#trigonometric-functions)
-    "sin",
-    "cos",
-    "tan",
-    "arcsin",
-    "arccos",
-    "arctan",
-    "arctan2",
-    "hypot",
-    "sinh",
-    "cosh",
-    "tanh",
-    "arcsinh",
-    "arccosh",
-    "arctanh",
-    "deg2rad",
-    "rad2deg",
-    # Bit-twiddling functions (https://docs.scipy.org/doc/numpy-1.14.0/reference/ufuncs.html#bit-twiddling-functions)
-    "bitwise_and",
-    "bitwise_or",
-    "bitwise_xor",
-    "invert",
-    "left_shift",
-    "right_shift",
-    # Comparison functions (https://docs.scipy.org/doc/numpy-1.14.0/reference/ufuncs.html#comparison-functions)
-    "greater",
-    "greater_equal",
-    "less",
-    "less_equal",
-    "not_equal",
-    "equal",
-    "logical_and",
-    "logical_or",
-    "logical_xor",
-    "logical_not",
-    "maximum",
-    "minimum",
-    "fmax",
-    "fmin",
-    # Floating functions (https://docs.scipy.org/doc/numpy-1.14.0/reference/ufuncs.html#floating-functions)
-    "isfinite",
-    "isinf",
-    "isnan",
-    "isnat",
-    "fabs",
-    "signbit",
-    "copysign",
-    "nextafter",
-    "spacing",
-    # 'modf', # not implemented since returns pair
-    "ldexp",
-    # 'frexp', # not implemented since returns pair
-    "fmod",
-    "floor",
-    "ceil",
-    "trunc",
-)
-for ufunc_name in UFUNC_NAMES:
-    ufunc = getattr(np, ufunc_name)
-    setattr(npd, ufunc_name, _delegate_to_np_dist(ufunc))
-
-# Implementations of selected functions in the numpy package
-
-
-@_delegate_to_np
-def argmax(a, axis=None):
-    return a.argmax(axis)
-
-
-@_delegate_to_np
-def amin(a, axis=None):
-    return a.min(axis)
-
-
-@_delegate_to_np
-def argmin(a, axis=None):
-    return a.argmin(axis)
-
-
-@_delegate_to_np
-def sum(a, axis=None):
-    return a.sum(axis)
-
-
-@_delegate_to_np
-def prod(a, axis=None):
-    return a.sum(axis)
-
-
-@_delegate_to_np
-def all(a, axis=None):
-    return a.all(axis)
-
-
-@_delegate_to_np
-def any(a, axis=None):
-    return a.any(axis)
-
-
-@_delegate_to_np
-def mean(a, axis=None):
-    return a.mean(axis)
-
-
-@_delegate_to_np
-def median(a):
-    # note this is not a distributed implementation
-    return np.median(a.asndarray())
-
-
-class ZappyArray:
+class ZappyArray(np.lib.mixins.NDArrayOperatorsMixin):
     def __init__(self, shape, chunks, dtype, partition_row_counts=None):
         self.shape = shape
         self.chunks = chunks
@@ -213,6 +31,8 @@ class ZappyArray:
     def _new(self, **kwargs):
         """Copy or update this object with the given keyword parameters."""
         out = kwargs.get("out")
+        if isinstance(out, tuple) and len(out) > 0:
+            out = out[0]  # TODO: handle multiple values
         obj = out if out else cp.copy(self)
         for key, value in kwargs.items():
             if key != "out" and not (key == "dtype" and value is None):
@@ -258,6 +78,13 @@ class ZappyArray:
         return ZappyArray._array_chunks_to_ndarray(
             self._compute(), self.partition_row_counts
         )
+
+    def __array__(self, dtype=None, **kwargs):
+        # respond to np.asarray
+        x = self.asndarray()
+        if dtype and x.dtype != dtype:
+            x = x.astype(dtype)
+        return x
 
     def _compute(self):
         """
@@ -343,42 +170,42 @@ class ZappyArray:
 
     # Calculation methods (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#calculation)
 
-    def mean(self, axis=None):
+    def mean(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.mean, axis)
         return self._calc_mean(axis)
 
-    def argmax(self, axis=None):
+    def argmax(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.argmax, axis)
         return self._calc_func_axis_distributive(np.argmax, axis)
 
-    def min(self, axis=None):
+    def min(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.amin, axis)
         return self._calc_func_axis_distributive(np.amin, axis)
 
-    def argmin(self, axis=None):
+    def argmin(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.argmin, axis)
         return self._calc_func_axis_distributive(np.argmin, axis)
 
-    def sum(self, axis=None):
+    def sum(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.sum, axis)
         return self._calc_func_axis_distributive(np.sum, axis)
 
-    def prod(self, axis=None):
+    def prod(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.prod, axis)
         return self._calc_func_axis_distributive(np.prod, axis)
 
-    def all(self, axis=None):
+    def all(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.all, axis)
         return self._calc_func_axis_distributive(np.all, axis)
 
-    def any(self, axis=None):
+    def any(self, axis, out=None, dtype=None, **kwargs):
         if axis == 1:
             return self._calc_func_axis_rowwise(np.any, axis)
         return self._calc_func_axis_distributive(np.any, axis)
@@ -402,6 +229,22 @@ class ZappyArray:
         return NotImplemented
 
     # Distributed ufunc internal implementation
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if method == "__call__":
+            # TODO: handle dtype generically
+            if ufunc.__name__ in (
+                "greater",
+                "greater_equal",
+                "less",
+                "less_equal",
+                "not_equal",
+                "equal",
+            ):
+                kwargs["dtype"] = bool
+            if len(inputs) > 0 and isinstance(inputs[0], ZappyArray):
+                return inputs[0]._dist_ufunc(ufunc, inputs[1:], **kwargs)
+        return NotImplemented
 
     def _dist_ufunc(self, func, args, out=None, dtype=None):
         # unary ufunc
@@ -459,7 +302,7 @@ class ZappyArray:
 
     def _integer_index(self, item):
         # TODO: not scalable for large arrays
-        return self.asndarray().__getitem__(item)
+        return np.asarray(self).__getitem__(item)
 
     def _boolean_array_index_dist(self, item):
         return NotImplemented
@@ -538,7 +381,7 @@ class ZappyArray:
         """Materialize index as an ndarray, or leave as a slice."""
         if isinstance(index, slice):
             return index
-        return asarray(index)
+        return np.asarray(index)
 
     @staticmethod
     def _compute_dim(dim, subset):
@@ -552,135 +395,3 @@ class ZappyArray:
         elif subset.dtype == np.dtype(int):
             return len(subset)
         return builtins.sum(subset)
-
-    # Arithmetic, matrix multiplication, and comparison operations (https://docs.scipy.org/doc/numpy-1.14.0/reference/arrays.ndarray.html#arithmetic-matrix-multiplication-and-comparison-operations)
-
-    # Python operator overloading, all delegate to ufunc implementations in this package
-
-    # Comparison operators
-
-    def __lt__(self, other):
-        return npd.less(self, other, dtype=bool)
-
-    def __le__(self, other):
-        return npd.less_equal(self, other, dtype=bool)
-
-    def __gt__(self, other):
-        return npd.greater(self, other, dtype=bool)
-
-    def __ge__(self, other):
-        return npd.greater_equal(self, other, dtype=bool)
-
-    def __eq__(self, other):
-        return npd.equal(self, other, dtype=bool)
-
-    def __ne__(self, other):
-        return npd.not_equal(self, other, dtype=bool)
-
-    # Truth value of an array (bool)
-
-    # TODO: __nonzero__
-
-    # Unary operations
-
-    def __neg__(self):
-        return npd.negative(self)
-
-    def __pos__(self):
-        return npd.positive(self)
-
-    def __abs__(self):
-        return npd.abs(self)
-
-    def __invert__(self):
-        return npd.invert(self)
-
-    # Arithmetic
-
-    def __add__(self, other):
-        return npd.add(self, other)
-
-    def __sub__(self, other):
-        return npd.subtract(self, other)
-
-    def __mul__(self, other):
-        return npd.multiply(self, other)
-
-    def __div__(self, other):
-        return npd.divide(self, other)
-
-    def __truediv__(self, other):
-        return npd.true_divide(self, other)
-
-    def __floordiv__(self, other):
-        return npd.floor_divide(self, other)
-
-    def __mod__(self, other):
-        return npd.mod(self, other)
-
-    # TODO: not implemented since returns pair
-    # def __divmod__(self, other):
-    #     return npd.div_mod(self, other)
-
-    def __pow__(self, other):
-        return npd.power(self, other)
-
-    def __lshift__(self, other):
-        return npd.lshift(self, other)
-
-    def __rshift__(self, other):
-        return npd.rshift(self, other)
-
-    def __and__(self, other):
-        return npd.bitwise_and(self, other)
-
-    def __or__(self, other):
-        return npd.bitwise_or(self, other)
-
-    def __xor__(self, other):
-        return npd.bitwise_xor(self, other)
-
-    # Arithmetic, in-place
-
-    def __iadd__(self, other):
-        return npd.add(self, other, out=self)
-
-    def __isub__(self, other):
-        return npd.subtract(self, other, out=self)
-
-    def __imul__(self, other):
-        return npd.multiply(self, other, out=self)
-
-    def __idiv__(self, other):
-        return npd.multiply(self, other, out=self)
-
-    def __itruediv__(self, other):
-        return npd.true_divide(self, other, out=self)
-
-    def __ifloordiv__(self, other):
-        return npd.floor_divide(self, other, out=self)
-
-    def __imod__(self, other):
-        return npd.mod(self, other, out=self)
-
-    def __ipow__(self, other):
-        return npd.power(self, other, out=self)
-
-    def __ilshift__(self, other):
-        return npd.lshift(self, other, out=self)
-
-    def __irshift__(self, other):
-        return npd.rshift(self, other, out=self)
-
-    def __iand__(self, other):
-        return npd.bitwise_and(self, other, out=self)
-
-    def __ior__(self, other):
-        return npd.bitwise_or(self, other, out=self)
-
-    def __ixor__(self, other):
-        return npd.bitwise_xor(self, other, out=self)
-
-    # Matrix Multiplication
-
-    # TODO: __matmul__

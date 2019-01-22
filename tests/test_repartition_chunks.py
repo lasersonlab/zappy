@@ -1,7 +1,7 @@
 import concurrent.futures
 import logging
+import numpy as np
 import pytest
-import zappy.base as np  # zappy includes everything in numpy, with some overrides and new functions
 import zappy.executor
 import zappy.direct
 import zappy.spark

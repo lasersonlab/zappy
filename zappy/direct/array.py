@@ -135,12 +135,12 @@ class DirectZappyArray(ZappyArray):
     def _binary_ufunc_broadcast_single_row_or_value(
         self, func, other, out=None, dtype=None
     ):
-        other = asarray(other)  # materialize
+        other = np.asarray(other)  # materialize
         new_local_rows = [func(x, other) for x in self.local_rows]
         return self._new(local_rows=new_local_rows, out=out, dtype=dtype)
 
     def _binary_ufunc_broadcast_single_column(self, func, other, out=None, dtype=None):
-        other = asarray(other)  # materialize
+        other = np.asarray(other)  # materialize
         partition_row_subsets = ZappyArray._copartition(
             other, self.partition_row_counts
         )
@@ -161,7 +161,7 @@ class DirectZappyArray(ZappyArray):
 
     def _boolean_array_index_dist(self, item):
         # almost identical to row subset below
-        subset = asarray(item)  # materialize
+        subset = np.asarray(item)  # materialize
         partition_row_subsets = ZappyArray._copartition(
             subset, self.partition_row_counts
         )
